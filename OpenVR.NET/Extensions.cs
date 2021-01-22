@@ -16,16 +16,16 @@ namespace OpenVR.NET {
 			}
 
 			Quaternion q = default;
-			q.W = -MathF.Sqrt( MathF.Max( 0, 1 + mat.m0 + mat.m5 + mat.m10 ) ) / 2;
+			q.W = MathF.Sqrt( MathF.Max( 0, 1 + mat.m0 + mat.m5 + mat.m10 ) ) / 2;
 			q.X = MathF.Sqrt( MathF.Max( 0, 1 + mat.m0 - mat.m5 - mat.m10 ) ) / 2;
 			q.Y = MathF.Sqrt( MathF.Max( 0, 1 - mat.m0 + mat.m5 - mat.m10 ) ) / 2;
 			q.Z = MathF.Sqrt( MathF.Max( 0, 1 - mat.m0 - mat.m5 + mat.m10 ) ) / 2;
-			var l = q.Length();
-			q.X = CopySign( q.X, mat.m9 - mat.m6 ) / l;
-			q.Y = CopySign( q.Y, mat.m8 - mat.m2 ) / l;
-			q.Z = CopySign( q.Z, mat.m4 - mat.m1 ) / l;
+			q.X = CopySign( q.X, mat.m9 - mat.m6 );
+			q.Y = CopySign( q.Y, mat.m2 - mat.m8 );
+			q.Z = CopySign( q.Z, mat.m1 - mat.m4 );
 
-			return q;
+			var scale = 1 / q.LengthSquared();
+			return new Quaternion( q.X * -scale, q.Y * -scale, q.Z * -scale, q.W * scale );
 		}
 	}
 }

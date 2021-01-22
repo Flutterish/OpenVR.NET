@@ -35,7 +35,7 @@ namespace OpenVR.NET {
 		private static double lastInitializationAttempt;
 		private static double initializationAttemptInterval = 5000;
 		public static readonly VrInput Current = new();
-		internal static void UpdateDraw ( double timeMS ) {
+		public static void UpdateDraw ( double timeMS ) {
 			if ( VrState.HasFlag( VrState.NotInitialized ) && timeMS >= lastInitializationAttempt + initializationAttemptInterval ) {
 				lastInitializationAttempt = timeMS;
 				EVRInitError error = EVRInitError.None;
@@ -157,7 +157,7 @@ namespace OpenVR.NET {
 			}
 		}
 
-		internal static void Exit () {
+		public static void Exit () {
 			if ( CVRSystem is not null ) {
 				Valve.VR.OpenVR.Shutdown();
 				CVRSystem = null;
@@ -218,6 +218,17 @@ namespace OpenVR.NET {
 			}
 			else return null;
 		}
+
+		/// <summary>
+		/// Submits the image for an eye. Can only be called after <see cref="UpdateDraw(double)"/>
+		/// </summary>
+		public static void SubmitFrame ( EVREye eye, Texture_t texture ) {
+			VRTextureBounds_t bounds = new VRTextureBounds_t { uMin = 0, uMax = 1, vMin = 0, vMax = 1 };
+			var error = Valve.VR.OpenVR.Compositor.Submit( eye, ref texture, ref bounds, EVRSubmitFlags.Submit_Default );
+			if ( error != EVRCompositorError.None ) {
+				Events.Error( $"Frame submit errors: {eye} : {error}" );
+			}
+		}
 	}
 
 	[Flags]
@@ -255,7 +266,7 @@ namespace OpenVR.NET {
 		public Quaternion Rotation;
 		public int ID { get; init; }
 		public string ModelName { get; init; }
-		public async Task LoadModel ( System.Action begin = null, System.Action finish = null, System.Action<Vector3> addVertice = null, System.Action<Vector2> addTextureCoordinate = null, System.Action<short, short, short> addTriangle = null ) {
+		public async Task LoadModelAsync ( System.Action begin = null, System.Action finish = null, System.Action<Vector3> addVertice = null, System.Action<Vector2> addTextureCoordinate = null, System.Action<short, short, short> addTriangle = null ) {
 			begin?.Invoke();
 			IntPtr ptr = IntPtr.Zero;
 			while ( true ) {
