@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -35,7 +36,14 @@ namespace OpenVR.NET {
 		private static double lastInitializationAttempt;
 		private static double initializationAttemptInterval = 5000;
 		public static readonly VrInput Current = new();
+		/// <summary>
+		/// Initializes and draws to the headset. Should be called on the draw thread. Blocks to synchronize with headset refresh rate.
+		/// </summary>
+		/// <param name="timeMS">Timestamp in milliseconds</param>
 		public static void UpdateDraw ( double timeMS ) {
+			lastTime = now;
+			now = timeMS;
+
 			if ( VrState.HasFlag( VrState.NotInitialized ) && timeMS >= lastInitializationAttempt + initializationAttemptInterval ) {
 				lastInitializationAttempt = timeMS;
 				EVRInitError error = EVRInitError.None;
@@ -52,10 +60,17 @@ namespace OpenVR.NET {
 
 			if ( VrState.HasFlag( VrState.OK ) ) {
 				// TODO check if rig is still alive
-				ReadVrInput();
+				ReadVrPoses();
 			}
 		}
 
+		private static double lastTime;
+		private static double now;
+		/// <summary>
+		/// How much time has passed since last draw frame.
+		/// </summary>
+		public static double DeltaTime => (now - lastTime)/1000;
+		public static ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
 		static void InitializeOpenVR () {
 			// TODO log/explain startup errors https://github.com/ValveSoftware/openvr/wiki/API-Documentation
 			uint w = 0, h = 0;
@@ -68,7 +83,7 @@ namespace OpenVR.NET {
 		const string DEFAULT_CONTROLLER_MODEL = "{indexcontroller}valve_controller_knu_1_0_left";
 		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
 		private static readonly TrackedDevicePose_t[] trackedGameDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
-		static void ReadVrInput () {
+		static void ReadVrPoses () {
 			// this blocks on the draw thread but it needs to be there ( it limits fps to headset framerate so its fine )
 			var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( trackedRenderDevices, trackedGameDevices );
 			if ( error != EVRCompositorError.None ) {
@@ -88,26 +103,70 @@ namespace OpenVR.NET {
 
 						case ETrackedDeviceClass.Controller:
 							if ( !Current.Controllers.ContainsKey( i ) ) {
+								var error2 = ETrackedPropertyError.TrackedProp_Success;
+								var roleID = Valve.VR.OpenVR.System.GetInt32TrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_ControllerRoleHint_Int32, ref error2 );
+
+								var role = (ETrackedControllerRole)roleID;
 								var sb = new StringBuilder( 256 );
 								var propError = ETrackedPropertyError.TrackedProp_Success;
 								CVRSystem.GetStringTrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_RenderModelName_String, sb, 256, ref propError );
+								// TODO test if this works
+								ulong handle = 0;
+								Valve.VR.OpenVR.Input.GetInputSourceHandle( role == ETrackedControllerRole.LeftHand ? Valve.VR.OpenVR.k_pchPathUserHandLeft : Valve.VR.OpenVR.k_pchPathUserHandRight, ref handle );
 								Controller controller;
 								if ( propError != ETrackedPropertyError.TrackedProp_Success ) {
-									controller = new() { ID = i, ModelName = DEFAULT_CONTROLLER_MODEL };
+									controller = new() {
+										ID = i,
+										ModelName = DEFAULT_CONTROLLER_MODEL,
+										Role = role,
+										IsMainController = role == DominantHand,
+										Handle = handle
+									};
 									Events.Error( $"Couldn't find a model for controller with id {index}. Using Valve Index Controller (Left)" );
 								}
 								else {
-									controller = new() { ID = i, ModelName = sb.ToString() };
+									controller = new() { 
+										ID = i, 
+										ModelName = sb.ToString(),
+										Role = role,
+										IsMainController = role == DominantHand,
+										Handle = handle
+									};
 								}
 								Current.Controllers.Add( i, controller );
+								NewControllerAdded?.Invoke( controller );
 							}
 							Current.Controllers[ i ].Position = device.mDeviceToAbsoluteTracking.ExtractPosition();
 							Current.Controllers[ i ].Rotation = device.mDeviceToAbsoluteTracking.ExtractRotation();
+							Current.Controllers[ i ].IsEnabled = device.bDeviceIsConnected;
 							break;
+					}
+				}
+				else if ( i == index ) {
+					if ( Current.Controllers.ContainsKey( i ) ) {
+						Current.Controllers[ i ].IsEnabled = false;
 					}
 				}
 			}
 		}
+		public static Controller ControllerForOrigin ( ulong origin ) {
+			InputOriginInfo_t info = default;
+			Valve.VR.OpenVR.Input.GetOriginTrackedDeviceInfo( origin, ref info, (uint)Marshal.SizeOf<InputOriginInfo_t>() );
+			return Current.Controllers.TryGetValue( (int)info.trackedDeviceIndex, out var c ) ? c : null;
+		}
+		/// <summary>
+		/// The main controller or if not present, a fallback one
+		/// </summary>
+		public static Controller MainController => Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled && x.IsMainController ) ?? Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled );
+		public static Controller SecondaryController {
+			get {
+				var main = MainController;
+				return Current.Controllers.Values.FirstOrDefault( x => x!= main && x.IsEnabled );
+			}
+		}
+		public static Controller LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
+		public static Controller RightController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.RightHand );
+		public static int EnabledControllerCount => Current.Controllers.Count( x => x.Value.IsEnabled );
 		public static event System.Action<Controller> NewControllerAdded;
 		public static void BindNewControllerAdded ( System.Action<Controller> action, bool runOnExisting = false ) {
 			NewControllerAdded += action;
@@ -118,6 +177,9 @@ namespace OpenVR.NET {
 			}
 		}
 
+		/// <summary>
+		/// Updates inputs and polls events. Should be called on the input or update thread.
+		/// </summary>
 		public static void Update () {
 			if ( !VrState.HasFlag( VrState.OK ) ) return;
 			if ( ActionManifest is null || !AreComponentsLoaded ) return;
@@ -153,7 +215,9 @@ namespace OpenVR.NET {
 
 			Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)System.Runtime.InteropServices.Marshal.SizeOf<VRActiveActionSet_t>() );
 			foreach ( var i in components ) {
-				i.Value.Update();
+				foreach ( var k in i.Value ) {
+					k.Value.Update();
+				}
 			}
 		}
 
@@ -166,6 +230,9 @@ namespace OpenVR.NET {
 
 		public static Manifest ActionManifest { get; private set; }
 		public static void SetManifest ( Manifest manifest ) {
+			if ( ActionManifest is not null ) {
+				throw new InvalidOperationException( $"{nameof(ActionManifest)} is already declared." );
+			}
 			ActionManifest = manifest;
 			if ( VrState.HasFlag( VrState.OK ) ) SetManifest();
 		}
@@ -173,7 +240,8 @@ namespace OpenVR.NET {
 		public const string ACTION_MANIFEST_NAME = "openVR_action_manifest.json";
 		public const string VR_MANIFEST_NAME = "openVR_vrmanifest.vrmanifest";
 		public static bool AreComponentsLoaded { get; private set; }
-		static Dictionary<object, ControllerComponent> components = new();
+		static Controller nullController = new();
+		static Dictionary<object, Dictionary<Controller, ControllerComponent>> components = new();
 		static VRActiveActionSet_t[] actionSets;
 		static void SetManifest () {
 			var raw = RawManifest.Parse( ActionManifest );
@@ -183,7 +251,7 @@ namespace OpenVR.NET {
 			File.WriteAllText( vrManifestPath, System.Text.Json.JsonSerializer.Serialize( raw.vrManifest, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true } ) );
 			var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( vrManifestPath, true );
 			if ( error != EVRApplicationError.None ) {
-				Events.Error($"Couldn't set application vr manifest: {error}" ); // TODO our own VR error panel
+				Events.Error($"Couldn't set application vr manifest: {error}" );
 			}
 			var error2 = Valve.VR.OpenVR.Input.SetActionManifestPath( actionManifestPath );
 			if ( error2 != EVRInputError.None ) {
@@ -195,7 +263,7 @@ namespace OpenVR.NET {
 					ulong handle = 0;
 					Valve.VR.OpenVR.Input.GetActionHandle( action.FullPath, ref handle );
 					var comp = action.CreateComponent( handle );
-					components.Add( comp.Name, comp );
+					components.Add( comp.Name, new() { [ nullController ] = comp } );
 				}
 			}
 
@@ -209,12 +277,42 @@ namespace OpenVR.NET {
 				return new VRActiveActionSet_t { ulActionSet = handle };
 			} ).ToArray();
 
+			var dh = ETrackedControllerRole.Invalid;
+			var error3 = Valve.VR.OpenVR.Input.GetDominantHand( ref dh );
+			if ( error3 != EVRInputError.None ) {
+				Events.Error( $"Couldnt determine dominant hand: {error3}. Falling back to right hand." );
+				dh = ETrackedControllerRole.RightHand;
+			}
+			DominantHand = dh;
+
 			AreComponentsLoaded = true;
+			ComponentsLoaded?.Invoke();
 		}
 
-		public static T GetControllerComponent<T> ( object name ) where T : ControllerComponent {
-			if ( components.TryGetValue( name, out var comp ) ) {
-				return comp as T;
+		public static event System.Action ComponentsLoaded;
+		public static void BindComponentsLoaded ( System.Action action ) {
+			ComponentsLoaded += action;
+			if ( AreComponentsLoaded ) {
+				action();
+			}
+		}
+
+		/// <summary>
+		/// Retreives a controller component for a given name declared in the manifest via <see cref="SetManifest(Manifest)"/>.
+		/// The Generic type should be one of <see cref="ControllerButton"/>, <see cref="ControllerVector"/>, <see cref="Controller2DVector"/>, <see cref="Controller3DVector"/> or <see cref="ControllerHaptic"/>.
+		/// Additionaly if a controller is specified, the controller component will only receive inputs from that controller (TBD).
+		/// </summary>
+		public static T GetControllerComponent<T> ( object name, Controller controller = null ) where T : ControllerComponent {
+			controller ??= nullController;
+			if ( components.TryGetValue( name, out var cat ) ) {
+				if ( cat.TryGetValue( controller, out var comp ) ) {
+					return comp as T;
+				}
+				else {
+					comp = cat[ nullController ].CopyWithRestriction( controller.Handle );
+					cat.Add( controller, comp );
+					return comp as T;
+				}
 			}
 			else return null;
 		}
@@ -262,11 +360,50 @@ namespace OpenVR.NET {
 	}
 
 	public class Controller {
+		/// <summary>
+		/// Whether this controller is the main one, for example if someone is right handed and this is the right controller.
+		/// </summary>
+		public bool IsMainController { get; init; }
+		public ETrackedControllerRole Role { get; init; }
+
 		public Vector3 Position;
 		public Quaternion Rotation;
 		public int ID { get; init; }
+
+		private bool isEnabled;
+		public bool IsEnabled {
+			get => isEnabled;
+			set {
+				if ( isEnabled == value ) return;
+				isEnabled = value;
+				if ( isEnabled )
+					Enabled?.Invoke();
+				else
+					Disabled?.Invoke();
+			}
+		}
+		public event System.Action Enabled;
+		public event System.Action Disabled;
+
+		public void BindEnabled ( System.Action action, bool runNowIfEnabled = false ) {
+			Enabled += action;
+			if ( runNowIfEnabled && IsEnabled ) action();
+		}
+		public void BindDisabled ( System.Action action, bool runNowIfDisabled = false ) {
+			Disabled += action;
+			if ( runNowIfDisabled && !IsEnabled ) action();
+		}
+
+		public ulong Handle { get; init; }
+
 		public string ModelName { get; init; }
+		private bool loadLock = false;
+		// BUG sometimes the same model is loaded for 2 different controllers ( i think its when they simultaniously call this )
 		public async Task LoadModelAsync ( System.Action begin = null, System.Action finish = null, System.Action<Vector3> addVertice = null, System.Action<Vector2> addTextureCoordinate = null, System.Action<short, short, short> addTriangle = null ) {
+			while ( loadLock ) {
+				await Task.Delay( 100 );
+			}
+			loadLock = true;
 			begin?.Invoke();
 			IntPtr ptr = IntPtr.Zero;
 			while ( true ) {
@@ -304,11 +441,13 @@ namespace OpenVR.NET {
 					// TODO load textures
 					// https://github.com/ValveSoftware/steamvr_unity_plugin/blob/9cc1a76226648d8deb7f3900ab277dfaaa80d60c/Assets/SteamVR/Scripts/SteamVR_RenderModel.cs#L377
 					finish?.Invoke();
+					loadLock = false;
 					return;
 				}
 				else {
 					Events.Error( $"Model `{ModelName}` could not be loaded." );
 					finish?.Invoke();
+					loadLock = false;
 					return;
 				}
 			}

@@ -20,7 +20,7 @@
 		/// </summary>
 		Boolean,
 		/// <summary>
-		/// Vecotr1 actions are read from triggers, 1D trackpads and joysticks 
+		/// Vector1 actions are read from triggers and scrolls
 		/// </summary>
 		Vector1,
 		/// <summary>

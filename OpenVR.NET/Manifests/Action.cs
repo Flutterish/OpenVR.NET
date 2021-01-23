@@ -13,13 +13,13 @@ namespace OpenVR.NET.Manifests {
 				case ActionType.Boolean:
 					return new ControllerButton { Handle = handle, Name = Name };
 				case ActionType.Vector1:
-					return null;
+					return new ControllerVector { Handle = handle, Name = Name };
 				case ActionType.Vector2:
-					return null;
+					return new Controller2DVector { Handle = handle, Name = Name };
 				case ActionType.Vector3:
-					return null;
+					return new Controller3DVector { Handle = handle, Name = Name };
 				case ActionType.Vibration:
-					return null;
+					return new ControllerHaptic { Handle = handle, Name = Name };
 				case ActionType.Skeleton:
 					return null;
 				case ActionType.Pose:
