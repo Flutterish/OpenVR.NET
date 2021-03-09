@@ -193,7 +193,7 @@ namespace OpenVR.NET.Manifests {
 		public void TriggerVibration ( double duration, double frequency = 5, double amplitude = 0.5, double delay = 0 ) { // BUG doesnt work?
 			var error = Valve.VR.OpenVR.Input.TriggerHapticVibrationAction( Handle, (float)delay, (float)duration, (float)frequency, (float)amplitude, Restriction );
 			if ( error != EVRInputError.None ) {
-				Events.Error( $"Cannot send haptic vibration: {error}" );
+				Events.Error( $"Cannot send haptic vibration: {error}." );
 			}
 		}
 

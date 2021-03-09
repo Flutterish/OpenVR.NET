@@ -132,6 +132,8 @@ namespace OpenVR.NET {
 										Handle = handle
 									};
 								}
+								controller.BindEnabled( () => EnabledControllerCount++, true );
+								controller.BindDisabled( () => EnabledControllerCount-- );
 								Current.Controllers.Add( i, controller );
 								NewControllerAdded?.Invoke( controller );
 							}
@@ -165,7 +167,7 @@ namespace OpenVR.NET {
 		}
 		public static Controller LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
 		public static Controller RightController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.RightHand );
-		public static int EnabledControllerCount => Current.Controllers.Count( x => x.Value.IsEnabled );
+		public static int EnabledControllerCount { get; private set; }
 		public static event System.Action<Controller> NewControllerAdded;
 		public static void BindNewControllerAdded ( System.Action<Controller> action, bool runOnExisting = false ) {
 			NewControllerAdded += action;
