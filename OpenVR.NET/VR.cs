@@ -11,6 +11,7 @@ using System.Text.Json;
 using Valve.VR;
 
 namespace OpenVR.NET {
+	// NOTE: further development can be researched here: https://github.com/ValveSoftware/steamvr_unity_plugin/blob/master/Assets/SteamVR/Scripts
 	public static class VR {
 		// NOTE platform specific binaries for openVR are there: https://github.com/ValveSoftware/openvr/tree/master/bin
 		private static VrState vrState = VrState.NotInitialized;
@@ -79,7 +80,6 @@ namespace OpenVR.NET {
 			if ( ActionManifest is not null ) SetManifest();
 		}
 
-		const string DEFAULT_CONTROLLER_MODEL = "{indexcontroller}valve_controller_knu_1_0_left";
 		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
 		private static readonly TrackedDevicePose_t[] trackedGameDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
 		static void ReadVrPoses () {
@@ -106,32 +106,14 @@ namespace OpenVR.NET {
 								var roleID = Valve.VR.OpenVR.System.GetInt32TrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_ControllerRoleHint_Int32, ref error2 );
 
 								var role = (ETrackedControllerRole)roleID;
-								var sb = new StringBuilder( 256 );
-								var propError = ETrackedPropertyError.TrackedProp_Success;
-								CVRSystem.GetStringTrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_RenderModelName_String, sb, 256, ref propError );
-								// TODO test if this works
 								ulong handle = 0;
 								Valve.VR.OpenVR.Input.GetInputSourceHandle( role == ETrackedControllerRole.LeftHand ? Valve.VR.OpenVR.k_pchPathUserHandLeft : Valve.VR.OpenVR.k_pchPathUserHandRight, ref handle );
-								Controller controller;
-								if ( propError != ETrackedPropertyError.TrackedProp_Success ) {
-									controller = new() {
-										ID = i,
-										ModelName = DEFAULT_CONTROLLER_MODEL,
-										Role = role,
-										IsMainController = role == DominantHand,
-										Handle = handle
-									};
-									Events.Error( $"Couldn't find a model for controller with id {index}. Using Valve Index Controller (Left)" );
-								}
-								else {
-									controller = new() { 
-										ID = i, 
-										ModelName = sb.ToString(),
-										Role = role,
-										IsMainController = role == DominantHand,
-										Handle = handle
-									};
-								}
+								var controller = new Controller() {
+									DeviceIndex = (uint)i,
+									Role = role,
+									IsMainController = role == DominantHand,
+									Handle = handle
+								};
 								controller.BindEnabled( () => EnabledControllerCount++, true );
 								controller.BindDisabled( () => EnabledControllerCount-- );
 								Current.Controllers.Add( i, controller );
@@ -357,10 +339,5 @@ namespace OpenVR.NET {
 	public class VrInput {
 		public readonly Headset Headset = new();
 		public readonly Dictionary<int, Controller> Controllers = new();
-	}
-
-	public class Headset {
-		public Vector3 Position;
-		public Quaternion Rotation;
 	}
 }
