@@ -190,7 +190,11 @@ namespace OpenVR.NET.Manifests {
 		/// Triggers a haptic vibration.
 		/// Paramerters are in seconds and hertz.
 		/// </summary>
-		public void TriggerVibration ( double duration, double frequency = 5, double amplitude = 0.5, double delay = 0 ) { // BUG doesnt work?
+		public void TriggerVibration ( double duration, double frequency = 40, double amplitude = 1, double delay = 0 ) {
+			if ( Restriction == Valve.VR.OpenVR.k_ulInvalidActionHandle ) {
+				Events.Error( $"Cannot send haptic vibration: Target device not specified." );
+				return;
+			}
 			var error = Valve.VR.OpenVR.Input.TriggerHapticVibrationAction( Handle, (float)delay, (float)duration, (float)frequency, (float)amplitude, Restriction );
 			if ( error != EVRInputError.None ) {
 				Events.Error( $"Cannot send haptic vibration: {error}." );

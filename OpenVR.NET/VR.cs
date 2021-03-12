@@ -337,7 +337,7 @@ namespace OpenVR.NET {
 	}
 
 	public class VrInput {
-		public readonly Headset Headset = new();
+		public readonly Headset Headset = new() { DeviceIndex = Valve.VR.OpenVR.k_unTrackedDeviceIndex_Hmd };
 		public readonly Dictionary<int, Controller> Controllers = new();
 	}
 }
