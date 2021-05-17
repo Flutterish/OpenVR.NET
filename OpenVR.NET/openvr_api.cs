@@ -8,16 +8,16 @@
 
 using System;
 using System.Runtime.InteropServices;
-using Valve.VR;
 
 #if UNITY_5_3_OR_NEWER
 using UnityEngine;
 #endif
 
-namespace Valve.VR
-{
+#nullable disable
 
-[StructLayout(LayoutKind.Sequential)]
+namespace Valve.VR {
+
+	[StructLayout(LayoutKind.Sequential)]
 public struct IVRSystem
 {
 	[UnmanagedFunctionPointer(CallingConvention.StdCall)]

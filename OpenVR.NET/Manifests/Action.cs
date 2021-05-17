@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace OpenVR.NET.Manifests {
 	/// <summary>
 	/// A controller binding. Contains what type of input it uses and what enum name it has.
 	/// </summary>
 	public class Action<T> : Action where T : Enum {
-		public T Name { get; set; }
+		[MaybeNull, NotNull]
+		public T Name { get; init; }
 		public override string GetReadableName () => Name.ToString();
 		public override ControllerComponent CreateComponent ( ulong handle ) {
 			switch ( Type ) {
@@ -21,9 +23,9 @@ namespace OpenVR.NET.Manifests {
 				case ActionType.Vibration:
 					return new ControllerHaptic { Handle = handle, Name = Name };
 				case ActionType.Skeleton:
-					return null;
+					throw new InvalidOperationException( $"No controller component exists for {Type}" );
 				case ActionType.Pose:
-					return null;
+					throw new InvalidOperationException( $"No controller component exists for {Type}" );
 				default:
 					throw new InvalidOperationException( $"No controller component exists for {Type}" );
 			}
@@ -45,7 +47,7 @@ namespace OpenVR.NET.Manifests {
 		/// <summary>
 		/// The full action name. This is usually set by <see cref="VrManager"/>
 		/// </summary>
-		public string FullPath { get; set; }
+		public string FullPath { get; set; } = string.Empty;
 
 		public abstract ControllerComponent CreateComponent ( ulong handle );
 	}

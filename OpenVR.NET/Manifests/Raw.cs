@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Serialization;
@@ -55,7 +56,7 @@ namespace OpenVR.NET.Manifests {
 			var app = new RawVrManifestApp {
 				AppKey = source.Name,
 				LaunchType = source.LaunchType.ToString().ToLower(),
-				Path = source.Path ?? Assembly.GetEntryAssembly().Location,
+				Path = source.Path ?? Assembly.GetEntryAssembly()!.Location,
 				IsDashboardOverlay = source.IsDashBoardOverlay,
 				ActionManifestPath = $"./{VR.ACTION_MANIFEST_NAME}"
 			};
@@ -71,7 +72,7 @@ namespace OpenVR.NET.Manifests {
 		}
 
 		static Dictionary<string, string> getLocale ( string languageTag, List<Dictionary<string, string>> locales ) {
-			Dictionary<string, string> list = locales.FirstOrDefault( x => x[ "language_tag" ] == languageTag );
+			Dictionary<string, string>? list = locales.FirstOrDefault( x => x[ "language_tag" ] == languageTag );
 			if ( list is null ) {
 				list = new Dictionary<string, string> { [ "language_tag" ] = languageTag };
 				locales.Add( list );
@@ -81,26 +82,26 @@ namespace OpenVR.NET.Manifests {
 	}
 
 	internal class RawAction {
-		[JsonPropertyName( "name" )]
-		public string Name;
-		[JsonPropertyName( "requirement" )]
-		public string Requirement;
-		[JsonPropertyName( "type" )]
-		public string Type;
+		[JsonPropertyName( "name" ), MaybeNull, NotNull]
+		public string Name { get; init; }
+		[JsonPropertyName( "requirement" ), MaybeNull, NotNull]
+		public string Requirement { get; init; }
+		[JsonPropertyName( "type" ), MaybeNull, NotNull]
+		public string Type { get; init; }
 	}
 
 	internal class RawActionSet {
-		[JsonPropertyName( "name" )]
-		public string Name;
-		[JsonPropertyName( "usage" )]
-		public string Usage;
+		[JsonPropertyName( "name" ), MaybeNull, NotNull]
+		public string Name { get; init; }
+		[JsonPropertyName( "usage" ), MaybeNull, NotNull]
+		public string Usage { get; init; }
 	}
 
 	internal class RawDefault {
-		[JsonPropertyName( "controller_type" )]
-		public string Type;
-		[JsonPropertyName( "binding_url" )]
-		public string Path;
+		[JsonPropertyName( "controller_type" ), MaybeNull, NotNull]
+		public string Type { get; init; }
+		[JsonPropertyName( "binding_url" ), MaybeNull, NotNull]
+		public string Path { get; init; }
 	}
 
 	internal class RawVrManifest {
@@ -109,16 +110,16 @@ namespace OpenVR.NET.Manifests {
 	}
 
 	internal class RawVrManifestApp {
-		[JsonPropertyName( "app_key" )]
-		public string AppKey;
-		[JsonPropertyName( "launch_type" )]
-		public string LaunchType;
-		[JsonPropertyName( "binary_path_windows" )]
-		public string Path;
-		[JsonPropertyName( "is_dashboard_overlay" )]
-		public bool IsDashboardOverlay;
-		[JsonPropertyName( "action_manifest_path" )]
-		public string ActionManifestPath;
+		[JsonPropertyName( "app_key" ), MaybeNull, NotNull]
+		public string AppKey { get; init; }
+		[JsonPropertyName( "launch_type" ), MaybeNull, NotNull]
+		public string LaunchType { get; init; }
+		[JsonPropertyName( "binary_path_windows" ), MaybeNull, NotNull]
+		public string Path { get; init; }
+		[JsonPropertyName( "is_dashboard_overlay" ), MaybeNull, NotNull]
+		public bool IsDashboardOverlay { get; init; }
+		[JsonPropertyName( "action_manifest_path" ), MaybeNull, NotNull]
+		public string ActionManifestPath { get; init; }
 		[JsonPropertyName( "strings" )]
 		public Dictionary<string, Dictionary<string, string>> Strings = new();
 	}

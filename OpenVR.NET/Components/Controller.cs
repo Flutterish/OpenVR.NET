@@ -1,9 +1,6 @@
 ﻿using OpenVR.NET.Components;
 using OpenVR.NET.Manifests;
-using System;
 using System.Numerics;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using Valve.VR;
 
 namespace OpenVR.NET {
@@ -29,8 +26,8 @@ namespace OpenVR.NET {
 					Disabled?.Invoke();
 			}
 		}
-		public event System.Action Enabled;
-		public event System.Action Disabled;
+		public event System.Action? Enabled;
+		public event System.Action? Disabled;
 
 		public void BindEnabled ( System.Action action, bool runNowIfEnabled = false ) {
 			Enabled += action;
@@ -47,7 +44,7 @@ namespace OpenVR.NET {
 		/// Retreives a controller component for a given name declared in the manifest via <see cref="VR.SetManifest(Manifest)"/>.
 		/// The generic type should be one of <see cref="ControllerButton"/>, <see cref="ControllerVector"/>, <see cref="Controller2DVector"/>, <see cref="Controller3DVector"/> or <see cref="ControllerHaptic"/>.
 		/// </summary>
-		public T GetComponent<T> ( object name ) where T : ControllerComponent
+		public T? GetComponent<T> ( object name ) where T : ControllerComponent
 			=> VR.GetControllerComponent<T>( name, this );
 
 		const string DEFAULT_CONTROLLER_MODEL = "{indexcontroller}valve_controller_knu_1_0_left";

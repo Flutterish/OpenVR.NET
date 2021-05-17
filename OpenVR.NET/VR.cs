@@ -1,12 +1,11 @@
 ﻿using OpenVR.NET.Manifests;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
-using System.Net.Http.Headers;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using Valve.VR;
 
@@ -24,12 +23,13 @@ namespace OpenVR.NET {
 				VrStateChanged?.Invoke( value );
 			}
 		}
-		public static event System.Action<VrState> VrStateChanged;
+		public static event System.Action<VrState>? VrStateChanged;
 		public static void BindVrStateChanged ( System.Action<VrState> action, bool runOnceImmediately = false ) {
 			VrStateChanged += action;
 			if ( runOnceImmediately ) action( vrState );
 		}
 
+		[MaybeNull, NotNull, AllowNull]
 		public static CVRSystem CVRSystem { get; private set; }
 		public static Vector2 RenderSize { get; private set; }
 
@@ -77,7 +77,7 @@ namespace OpenVR.NET {
 			CVRSystem.GetRecommendedRenderTargetSize( ref w, ref h );
 			RenderSize = new Vector2( w, h );
 
-			if ( ActionManifest is not null ) SetManifest();
+			if ( ActionManifest is not null ) setManifest( ActionManifest );
 		}
 
 		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
@@ -132,7 +132,7 @@ namespace OpenVR.NET {
 				}
 			}
 		}
-		public static Controller ControllerForOrigin ( ulong origin ) {
+		public static Controller? ControllerForOrigin ( ulong origin ) {
 			InputOriginInfo_t info = default;
 			Valve.VR.OpenVR.Input.GetOriginTrackedDeviceInfo( origin, ref info, (uint)Marshal.SizeOf<InputOriginInfo_t>() );
 			return Current.Controllers.TryGetValue( (int)info.trackedDeviceIndex, out var c ) ? c : null;
@@ -140,17 +140,17 @@ namespace OpenVR.NET {
 		/// <summary>
 		/// The main controller or if not present, a fallback one
 		/// </summary>
-		public static Controller MainController => Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled && x.IsMainController ) ?? Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled );
-		public static Controller SecondaryController {
+		public static Controller? MainController => Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled && x.IsMainController ) ?? Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled );
+		public static Controller? SecondaryController {
 			get {
 				var main = MainController;
 				return Current.Controllers.Values.FirstOrDefault( x => x!= main && x.IsEnabled );
 			}
 		}
-		public static Controller LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
-		public static Controller RightController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.RightHand );
+		public static Controller? LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
+		public static Controller? RightController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.RightHand );
 		public static int EnabledControllerCount { get; private set; }
-		public static event System.Action<Controller> NewControllerAdded;
+		public static event System.Action<Controller>? NewControllerAdded;
 		public static void BindNewControllerAdded ( System.Action<Controller> action, bool runOnExisting = false ) {
 			NewControllerAdded += action;
 			if ( runOnExisting ) {
@@ -196,7 +196,7 @@ namespace OpenVR.NET {
 				}
 			}
 
-			Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)System.Runtime.InteropServices.Marshal.SizeOf<VRActiveActionSet_t>() );
+			Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
 			foreach ( var i in components ) {
 				foreach ( var k in i.Value ) {
 					k.Value.Update();
@@ -211,13 +211,13 @@ namespace OpenVR.NET {
 			}
 		}
 
-		public static Manifest ActionManifest { get; private set; }
+		public static Manifest? ActionManifest { get; private set; }
 		public static void SetManifest ( Manifest manifest ) {
 			if ( ActionManifest is not null ) {
 				throw new InvalidOperationException( $"{nameof(ActionManifest)} is already declared." );
 			}
 			ActionManifest = manifest;
-			if ( VrState.HasFlag( VrState.OK ) ) SetManifest();
+			if ( VrState.HasFlag( VrState.OK ) ) setManifest( ActionManifest );
 		}
 
 		public const string ACTION_MANIFEST_NAME = "openVR_action_manifest.json";
@@ -225,9 +225,9 @@ namespace OpenVR.NET {
 		public static bool AreComponentsLoaded { get; private set; }
 		static Controller nullController = new();
 		static Dictionary<object, Dictionary<Controller, ControllerComponent>> components = new();
-		static VRActiveActionSet_t[] actionSets;
-		static void SetManifest () {
-			var raw = RawManifest.Parse( ActionManifest );
+		static VRActiveActionSet_t[] actionSets = Array.Empty<VRActiveActionSet_t>();
+		static void setManifest ( Manifest manifest ) {
+			var raw = RawManifest.Parse( manifest );
 			var actionManifestPath = Path.Combine( Directory.GetCurrentDirectory(), ACTION_MANIFEST_NAME );
 			File.WriteAllText( actionManifestPath, System.Text.Json.JsonSerializer.Serialize( raw.actionManifest, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true } ) );
 			var vrManifestPath = Path.Combine( Directory.GetCurrentDirectory(), VR_MANIFEST_NAME );
@@ -241,7 +241,7 @@ namespace OpenVR.NET {
 				Events.Error( $"Couldn't set application action manifest: {error2}" );
 			}
 
-			foreach ( var group in ActionManifest.EnumerateGroups() ) {
+			foreach ( var group in manifest.EnumerateGroups() ) {
 				foreach ( var action in group.EnumerateActions() ) {
 					ulong handle = 0;
 					Valve.VR.OpenVR.Input.GetActionHandle( action.FullPath, ref handle );
@@ -250,7 +250,7 @@ namespace OpenVR.NET {
 				}
 			}
 
-			actionSets = ActionManifest.EnumerateGroups().Select( x => {
+			actionSets = manifest.EnumerateGroups().Select( x => {
 				ulong handle = 0;
 				var error = Valve.VR.OpenVR.Input.GetActionSetHandle( x.FullPath, ref handle );
 				if ( error != EVRInputError.None ) {
@@ -273,7 +273,7 @@ namespace OpenVR.NET {
 			componentsLoaded = null;
 		}
 
-		static event System.Action componentsLoaded;
+		static event System.Action? componentsLoaded;
 		/// <summary>
 		/// Call the given functions once all controller components are loaded.
 		/// </summary>
@@ -289,7 +289,7 @@ namespace OpenVR.NET {
 		/// The generic type should be one of <see cref="ControllerButton"/>, <see cref="ControllerVector"/>, <see cref="Controller2DVector"/>, <see cref="Controller3DVector"/> or <see cref="ControllerHaptic"/>.
 		/// Additionaly if a controller is specified, the controller component will only receive inputs from that controller.
 		/// </summary>
-		public static T GetControllerComponent<T> ( object name, Controller controller = null ) where T : ControllerComponent {
+		public static T? GetControllerComponent<T> ( object name, Controller? controller = null ) where T : ControllerComponent {
 			controller ??= nullController;
 			if ( components.TryGetValue( name, out var cat ) ) {
 				if ( cat.TryGetValue( controller, out var comp ) ) {

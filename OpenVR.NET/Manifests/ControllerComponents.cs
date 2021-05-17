@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Valve.VR;
@@ -11,6 +12,7 @@ namespace OpenVR.NET.Manifests {
 		/// <summary>
 		/// A unique name for this component, usually an enum or a string
 		/// </summary>
+		[MaybeNull, NotNull]
 		public object Name { get; init; }
 		public ulong Handle { get; init; }
 		protected ulong Restriction { get; init; } = Valve.VR.OpenVR.k_ulInvalidActionHandle;
@@ -26,16 +28,16 @@ namespace OpenVR.NET.Manifests {
 		public readonly T NewValue;
 		public readonly T OldValue;
 
-		public readonly Controller Source;
+		public readonly Controller? Source;
 
-		public ValueUpdatedEvent ( T newValue, T oldValue, Controller source ) {
+		public ValueUpdatedEvent ( T newValue, T oldValue, Controller? source ) {
 			NewValue = newValue;
 			OldValue = oldValue;
 			Source = source;
 		}
 	}
 
-	public abstract class ControllerInputComponent<T> : ControllerComponent where T : IEquatable<T> {
+	public abstract class ControllerInputComponent<T> : ControllerComponent where T : struct, IEquatable<T> {
 		private T value;
 		protected ulong SourceHandle;
 		public T Value {
@@ -53,7 +55,7 @@ namespace OpenVR.NET.Manifests {
 		/// <summary>
 		/// Value was updated.
 		/// </summary>
-		public event System.Action<ValueUpdatedEvent<T>> ValueUpdated;
+		public event System.Action<ValueUpdatedEvent<T>>? ValueUpdated;
 		/// <summary>
 		/// Binds an event to run when the value was updated.
 		/// </summary>
@@ -72,7 +74,7 @@ namespace OpenVR.NET.Manifests {
 		/// <summary>
 		/// Value was updated and is different from the previous one.
 		/// </summary>
-		public event System.Action<ValueUpdatedEvent<T>> ValueChanged;
+		public event System.Action<ValueUpdatedEvent<T>>? ValueChanged;
 		/// <summary>
 		/// Binds an event to run when the value was updated and was different from the previous one.
 		/// </summary>

@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace OpenVR.NET.Manifests {
 	/// <summary>
 	/// A group of <see cref="Action{TAction}"/>. Used to set the <see cref="ActionGroupType"/> of child <see cref="Action{T}"/>
 	/// </summary>
 	public class ActionGroup<TGroup, TAction> : ActionGroup where TAction : Enum where TGroup : Enum {
-		public TGroup Name { get; set; }
+		[MaybeNull, NotNull]
+		public TGroup Name { get; init; }
 		public List<Action<TAction>> Actions = new();
 
 		public override string GetReadableName ()
@@ -25,7 +27,7 @@ namespace OpenVR.NET.Manifests {
 		/// <summary>
 		/// The full group name. This is usually set by <see cref="VrManager"/>
 		/// </summary>
-		public string FullPath;
+		public string FullPath = string.Empty;
 		public abstract IEnumerable<Action> EnumerateActions ();
 		/// <summary>
 		/// Locale names. The key should follow http://www.lingoes.net/en/translator/langcode.htm (but lowercase snake case).

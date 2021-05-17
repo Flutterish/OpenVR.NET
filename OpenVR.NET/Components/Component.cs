@@ -5,8 +5,8 @@ namespace OpenVR.NET.Components {
 	public class Component {
 		public uint DeviceIndex { get; init; }
 
-		private ComponentModel model;
-		public ComponentModel Model {
+		private ComponentModel? model;
+		public ComponentModel? Model {
 			get {
 				if ( model is not null ) return model;
 
@@ -29,6 +29,6 @@ namespace OpenVR.NET.Components {
 			}
 		}
 
-		protected virtual ComponentModel GetFallbackModel () => null;
+		protected virtual ComponentModel? GetFallbackModel () => null;
 	}
 }
