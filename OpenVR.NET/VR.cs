@@ -197,12 +197,15 @@ namespace OpenVR.NET {
 			}
 
 			Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
-			foreach ( var i in components ) {
-				foreach ( var k in i.Value ) {
-					k.Value.Update();
+			lock ( componentLock ) {
+				foreach ( var i in components ) {
+					foreach ( var k in i.Value ) {
+						k.Value.Update();
+					}
 				}
 			}
 		}
+		private static object componentLock = new { };
 
 		public static void Exit () {
 			if ( CVRSystem is not null ) {
@@ -297,7 +300,7 @@ namespace OpenVR.NET {
 				}
 				else {
 					comp = cat[ nullController ].CopyWithRestriction( controller.Handle );
-					cat.Add( controller, comp );
+					lock ( componentLock ) { cat.Add( controller, comp ); }
 					return comp as T;
 				}
 			}
