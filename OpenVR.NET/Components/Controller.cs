@@ -8,7 +8,7 @@ namespace OpenVR.NET {
 		/// <summary>
 		/// Whether this controller is the main one, for example if someone is right handed and this is the right controller.
 		/// </summary>
-		public bool IsMainController { get; init; }
+		public bool IsMainController { get; init; } // TODO no
 		public ETrackedControllerRole Role { get; init; }
 
 		public Vector3 Position;

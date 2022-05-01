@@ -12,7 +12,7 @@ namespace OpenVR.NET {
 		public static event Action<string>? OnMessage;
 		public static event Action<string>? OnWarning;
 		public static event Action<string>? OnError;
-		public static event Action<string,Exception?>? OnException;
+		public static event Action<string,Exception>? OnException;
 
 		public static event Action<string,Exception?>? OnAnyEvent;
 	}

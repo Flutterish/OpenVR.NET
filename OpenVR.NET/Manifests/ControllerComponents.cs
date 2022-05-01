@@ -28,9 +28,9 @@ namespace OpenVR.NET.Manifests {
 		public readonly T NewValue;
 		public readonly T OldValue;
 
-		public readonly Controller? Source;
+		public readonly Controller Source;
 
-		public ValueUpdatedEvent ( T newValue, T oldValue, Controller? source ) {
+		public ValueUpdatedEvent ( T newValue, T oldValue, Controller source ) {
 			NewValue = newValue;
 			OldValue = oldValue;
 			Source = source;
@@ -44,7 +44,7 @@ namespace OpenVR.NET.Manifests {
 			get => value;
 			protected set {
 				var old = this.value;
-				var @event = new ValueUpdatedEvent<T>( value, old, VR.ControllerForOrigin( SourceHandle ) );
+				var @event = new ValueUpdatedEvent<T>( value, old, VR.ControllerForOrigin( SourceHandle )! );
 				ValueUpdated?.Invoke( @event );
 				if ( value.Equals( this.value ) ) return;
 				this.value = value;
@@ -61,7 +61,7 @@ namespace OpenVR.NET.Manifests {
 		/// </summary>
 		public void BindValueUpdatedDetailed ( System.Action<ValueUpdatedEvent<T>> action, bool runOnceImmediately = false ) {
 			ValueUpdated += action;
-			if ( runOnceImmediately ) action( new( value, value, VR.ControllerForOrigin( SourceHandle ) ) );
+			if ( runOnceImmediately ) action( new( value, value, VR.ControllerForOrigin( SourceHandle )! ) );
 		}
 		/// <summary>
 		/// Binds an event to run when the value was updated.
@@ -80,7 +80,7 @@ namespace OpenVR.NET.Manifests {
 		/// </summary>
 		public void BindValueChangedDetailed ( System.Action<ValueUpdatedEvent<T>> action, bool runOnceImmediately = false ) {
 			ValueChanged += action;
-			if ( runOnceImmediately ) action( new( value, value, VR.ControllerForOrigin( SourceHandle ) ) );
+			if ( runOnceImmediately ) action( new( value, value, VR.ControllerForOrigin( SourceHandle )! ) );
 		}
 		/// <summary>
 		/// Binds an event to run when the value was updated and was different from the previous one.
