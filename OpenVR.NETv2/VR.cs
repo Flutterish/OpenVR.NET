@@ -8,7 +8,8 @@ using Valve.VR;
 namespace OpenVR.NET;
 
 /// <summary>
-/// A multithreaded, object oriented wrapper around OpenVR
+/// A multithreaded, object oriented wrapper around OpenVR.
+/// Left handed coordinate system - Y is up, X is right, Z is forward
 /// </summary>
 public class VR {
 	public VrState State { get; private set; } = VrState.NotInitialized;
@@ -48,7 +49,8 @@ public class VR {
 	DrawContext drawContext = null!;
 	/// <summary>
 	/// Returns the openvr CVR System, if initialized.
-	/// This is useful for implementing not yet available features of OpenVR.NET
+	/// This is useful for implementing not yet available features of OpenVR.NET.
+	/// If you find yourself using unimplemented features, please open an issue
 	/// </summary>
 	public CVRSystem CVR { get; private set; } = null!;
 
@@ -59,21 +61,27 @@ public class VR {
 	/// While not critical, you might want to want to synchronise this pose update with the update thread.
 	/// Will return <see langword="null"/> until initialized.
 	/// </summary>
-	public IVRDrawContext? UpdateDraw () {
+	public IVRDrawContext? UpdateDraw ( ETrackingUniverseOrigin origin = ETrackingUniverseOrigin.TrackingUniverseStanding ) {
 		if ( State.HasFlag( VrState.OK ) ) {
-			pollPoses();
+			pollPoses( origin );
 			return drawContext;
 		}
 		else return null;
 	}
 
+	ETrackingUniverseOrigin origin = (ETrackingUniverseOrigin)( -1 );
 	TrackedDevicePose_t[] renderPoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	Dictionary<int, (VrDevice device, VrDevice.Owner owner)> trackedDeviceOwners = new();
 	HashSet<VrDevice> activeDevices = new();
 	// although in theory this should be on the update thread,
 	// this updates once per draw frame and is required to be called to allow for drawing
-	void pollPoses () {
+	void pollPoses ( ETrackingUniverseOrigin origin ) {
+		if ( origin != this.origin ) {
+			this.origin = origin;
+			Valve.VR.OpenVR.Compositor.SetTrackingSpace( origin );
+		}
+
 		var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( renderPoses, gamePoses );
 		if ( error != EVRCompositorError.None ) {
 			Events.Log( $"Player pose could not be retreived", EventType.CoundntFetchPlayerPose, error );
@@ -93,6 +101,9 @@ public class VR {
 				device = type switch {
 					ETrackedDeviceClass.HMD => new Headset( this, i, out owner ),
 					ETrackedDeviceClass.Controller => new Controller( this, i, out owner ),
+					ETrackedDeviceClass.GenericTracker => new Tracker( this, i, out owner ),
+					ETrackedDeviceClass.TrackingReference => new TrackingReference( this, i, out owner ),
+					ETrackedDeviceClass.DisplayRedirect => new DisplayRedirect( this, i, out owner ),
 					_ => new VrDevice( this, i, out owner )
 				};
 
@@ -140,6 +151,8 @@ public class VR {
 				pose = ref gamePoses[i];
 				owner.Position = extractPosition( ref pose.mDeviceToAbsoluteTracking );
 				owner.Rotation = extractRotation( ref pose.mDeviceToAbsoluteTracking );
+				owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
+				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, pose.vAngularVelocity.v2 );
 			}
 
 			if ( pose.eTrackingResult != owner.offThreadTrackingState ) {
@@ -164,12 +177,12 @@ public class VR {
 			action();
 		}
 
+		if ( !State.HasFlag( VrState.OK ) )
+			return;
+
 		foreach ( var i in updateableInputDevices ) {
 			i.UpdateInput();
 		}
-
-		if ( !State.HasFlag( VrState.OK ) )
-			return;
 	}
 	#endregion
 	#region Update Thread

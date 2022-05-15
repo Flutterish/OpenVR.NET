@@ -89,7 +89,7 @@ public class Controller : VrDevice {
 					if ( ( buttonsMask & mask ) == 0 )
 						continue;
 
-					rawActions.Add( new RawButton { SourceHandle = Handle, Mask = mask } );
+					rawActions.Add( new RawButton { SourceHandle = Handle, Mask = mask, Type = (EVRButtonId)i } );
 				}
 			}
 
@@ -106,10 +106,10 @@ public class Controller : VrDevice {
 				}
 
 				if ( type is EVRControllerAxisType.k_eControllerAxis_Trigger ) {
-					rawActions.Add( new RawSingle { SourceHandle = Handle, Index = i, Type = type } );
+					rawActions.Add( new RawSingle { SourceHandle = Handle, Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
 				}
 				else if ( type is EVRControllerAxisType.k_eControllerAxis_TrackPad or EVRControllerAxisType.k_eControllerAxis_Joystick ) {
-					rawActions.Add( new RawVector2 { SourceHandle = Handle, Index = i, Type = type } );
+					rawActions.Add( new RawVector2 { SourceHandle = Handle, Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
 				}
 			}
 
@@ -125,6 +125,10 @@ public class Controller : VrDevice {
 	/// </summary>
 	public interface ILegacyAction {
 		void Update ( in VRControllerState_t state );
+		/// <summary>
+		/// The input type for input actions, or -1 for outputs
+		/// </summary>
+		EVRButtonId Type { get; }
 	}
 	public abstract class RawInputAction<T> : InputAction<T>, ILegacyAction where T : struct {
 		public sealed override void Update () { }
@@ -142,6 +146,8 @@ public class Controller : VrDevice {
 
 		public sealed override Input.Action Clone ( ulong sourceHandle )
 			=> throw new InvalidOperationException( $"Can not clone raw inputs" );
+
+		public EVRButtonId Type { get; init; }
 	}
 
 	public class RawButton : RawInputAction<(bool pressed, bool touched)> {
@@ -157,7 +163,7 @@ public class Controller : VrDevice {
 
 	public class RawSingle : RawInputAction<float> {
 		public int Index { get; init; }
-		public EVRControllerAxisType Type { get; init; }
+		public EVRControllerAxisType AxisType { get; init; }
 
 		public override void Update ( in VRControllerState_t state ) {
 			Value = GetAxis( Index, state ).x;
@@ -166,7 +172,7 @@ public class Controller : VrDevice {
 
 	public class RawVector2 : RawInputAction<Vector2> {
 		public int Index { get; init; }
-		public EVRControllerAxisType Type { get; init; }
+		public EVRControllerAxisType AxisType { get; init; }
 
 		public override void Update ( in VRControllerState_t state ) {
 			var axis = GetAxis( Index, state );
@@ -185,5 +191,7 @@ public class Controller : VrDevice {
 		public void TriggerVibration ( int axis, ushort durationMicroSeconds ) {
 			device.VR.CVR.TriggerHapticPulse( device.DeviceIndex, (uint)axis, durationMicroSeconds );
 		}
+
+		public EVRButtonId Type => (EVRButtonId)( -1 );
 	}
 }

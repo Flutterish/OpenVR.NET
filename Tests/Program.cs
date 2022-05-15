@@ -57,12 +57,16 @@ input = new Thread( createInterval( 4, () => {
 draw = new Thread( createInterval( 17, () => {
 	Log( "Draw thread started", draw );
 }, ( time, deltaTime ) => {
-	vr.UpdateDraw();
+	var ctx = vr.UpdateDraw();
 	//if ( vr.Devices.OfType<Headset>().FirstOrDefault() is Headset headset ) {
 	//	var p = headset.Position;
 	//	var o = headset.RenderPosition - headset.Position;
 	//	Log( $"HMD position: {{{p.X:N2}, {p.Y:N2}, {p.Z:N2}}} | render offset: {{{o.X:N2}, {o.Y:N2}, {o.Z:N2}}}" );
 	//}
+	if ( ctx is null )
+		return;
+
+
 }, () => {
 	Log( "Draw thread stopped", draw );
 } ) ) { Name = "Draw" };
@@ -118,28 +122,28 @@ vr.DeviceDetected += d => {
 	bool logInput = true;
 	foreach ( var i in c.LegacyActions ) {
 		if ( i is Controller.RawButton b ) {
-			Log( $"{d} (device {d.DeviceIndex}) has raw input {i} [{Math.Log2( b.Mask ):0}]" );
+			Log( $"{c.Role} has Button {i.Type} [{Math.Log2( b.Mask ):0}]" );
 			if ( logInput ) b.ValueUpdated += v => {
-				Log( $"{d} (device {d.DeviceIndex}) Button [{Math.Log2( b.Mask ):0}] Pressed = {v.pressed} Touched = {v.touched}" );
+				Log( $"{c.Role} Button {i.Type} [{Math.Log2( b.Mask ):0}] Pressed = {v.pressed} Touched = {v.touched}" );
 			};
 		}
 		else if ( i is Controller.RawSingle s ) {
-			Log( $"{d} (device {d.DeviceIndex}) has raw input {i} [{s.Type} {s.Index}]" );
+			Log( $"{c.Role} has Scalar {i.Type}/{s.AxisType} [{s.Index}]" );
 			if ( logInput ) s.ValueUpdated += v => {
-				Log( $"{d} (device {d.DeviceIndex}) {s.Type} [{s.Index}] X = {v}" );
+				Log( $"{c.Role} {i.Type}/{s.AxisType} [{s.Index}] X = {v}" );
 			};
 		}
 		else if ( i is Controller.RawVector2 v2 ) {
-			Log( $"{d} (device {d.DeviceIndex}) has raw input {i} [{v2.Type} {v2.Index}]" );
+			Log( $"{c.Role} has Vector2 {i.Type}/{v2.AxisType} [{v2.Index}]" );
 			if ( logInput ) v2.ValueUpdated += v => {
-				Log( $"{d} (device {d.DeviceIndex}) {v2.Type} [{v2.Index}] X = {v.X:N4}, Y = {v.Y:N4}" );
+				Log( $"{c.Role} {i.Type}/{v2.AxisType} [{v2.Index}] X = {v.X:N4}, Y = {v.Y:N4}" );
 			};
 		}
 		else if ( i is Controller.RawHaptic h ) {
-			Log( $"{d} (device {d.DeviceIndex}) has raw haptic {i}" );
+			Log( $"{c.Role} has raw haptic" );
 		}
 		else {
-			Log( $"{d} (device {d.DeviceIndex}) has raw input {i}" );
+			Log( $"{c.Role} has raw input {i} ({i.Type})" );
 		}
 	}
 

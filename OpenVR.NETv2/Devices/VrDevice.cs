@@ -14,9 +14,29 @@ public class VrDevice {
 
 	public readonly VR VR;
 	public readonly uint DeviceIndex;
+	/// <summary>
+	/// Position in meters to be used on the input thread
+	/// </summary>
 	public Vector3 Position { get; protected set; }
+	/// <summary>
+	/// Velocity in meters per second to be used on the input thread
+	/// </summary>
+	public Vector3 Velocity { get; protected set; }
+	/// <summary>
+	/// Rotation quaternion to be used on the input thread
+	/// </summary>
 	public Quaternion Rotation { get; protected set; }
+	/// <summary>
+	/// Angular velocity in radians per second (?) to be used on the input thread [https://github.com/ValveSoftware/openvr/blob/4c85abcb7f7f1f02adaf3812018c99fc593bc341/headers/openvr.h#L260]
+	/// </summary>
+	public Vector3 AngularVelocity { get; protected set; }
+	/// <summary>
+	/// Position in meters to be used on the draw thread
+	/// </summary>
 	public Vector3 RenderPosition { get; protected set; }
+	/// <summary>
+	/// Rotation quaternion to be used on the draw thread
+	/// </summary>
 	public Quaternion RenderRotation { get; protected set; }
 
 	private bool isEnabled = false;
@@ -120,6 +140,14 @@ public class VrDevice {
 		else
 			throw new ArgumentException( $"Could not get {property} - {error}" );
 	}
+	public T GetEnum<T> ( ETrackedDeviceProperty property ) where T : struct, Enum {
+		ETrackedPropertyError error = ETrackedPropertyError.TrackedProp_Success;
+		var value = VR.CVR.GetInt32TrackedDeviceProperty( DeviceIndex, property, ref error );
+		if ( error is ETrackedPropertyError.TrackedProp_Success )
+			return (T)(object)value;
+		else
+			throw new ArgumentException( $"Could not get {property} - {error}" );
+	}
 	public ulong GetUlong ( ETrackedDeviceProperty property ) {
 		ETrackedPropertyError error = ETrackedPropertyError.TrackedProp_Success;
 		var value = VR.CVR.GetUint64TrackedDeviceProperty( DeviceIndex, property, ref error );
@@ -131,18 +159,37 @@ public class VrDevice {
 	public string GetString ( ETrackedDeviceProperty property ) {
 		ETrackedPropertyError error = ETrackedPropertyError.TrackedProp_Success;
 		var sb = new StringBuilder( 256 );
-		VR.CVR.GetStringTrackedDeviceProperty( DeviceIndex, property, sb, 256, ref error );
+		var length = VR.CVR.GetStringTrackedDeviceProperty( DeviceIndex, property, sb, 256, ref error );
 		if ( error is ETrackedPropertyError.TrackedProp_Success )
 			return sb.ToString();
+		else if ( error is ETrackedPropertyError.TrackedProp_BufferTooSmall ) {
+			sb.EnsureCapacity( (int)length );
+			VR.CVR.GetStringTrackedDeviceProperty( DeviceIndex, property, sb, length, ref error );
+			return sb.ToString();
+		}
 		else
 			throw new ArgumentException( $"Could not get {property} - {error}" );
 	}
+	public object? GetProperty ( ETrackedDeviceProperty property ) {
+		if ( property.ToString().EndsWith( "_Bool" ) )
+			return GetBool( property );
+		else if ( property.ToString().EndsWith( "_Float" ) )
+			return GetFloat( property );
+		else if ( property.ToString().EndsWith( "_Int32" ) )
+			return GetInt( property );
+		else if ( property.ToString().EndsWith( "_Uint64" ) )
+			return GetUlong( property );
+		else if ( property.ToString().EndsWith( "_String" ) )
+			return GetString( property );
 
-	/// <summary>
-	/// Updates performed on the update thread
-	/// </summary>
-	public virtual void Update () {
+		return null;
+	}
 
+	public bool HasProperty ( ETrackedDeviceProperty property ) {
+		ETrackedPropertyError error = ETrackedPropertyError.TrackedProp_Success;
+		VR.CVR.GetBoolTrackedDeviceProperty( DeviceIndex, property, ref error );
+
+		return error is not ETrackedPropertyError.TrackedProp_UnknownProperty;
 	}
 
 	public bool IsWireless => GetBool( ETrackedDeviceProperty.Prop_DeviceIsWireless_Bool );
@@ -153,7 +200,34 @@ public class VrDevice {
 	/// </summary>
 	public bool CanPowerOff => GetBool( ETrackedDeviceProperty.Prop_DeviceCanPowerOff_Bool );
 	public bool IsCharging => GetBool( ETrackedDeviceProperty.Prop_DeviceIsCharging_Bool );
+	/// <summary>
+	/// Battery level as a percentage in the range [0; 1]
+	/// </summary>
 	public float BatteryLevel => GetFloat( ETrackedDeviceProperty.Prop_DeviceBatteryPercentage_Float );
+
+	/// <summary>
+	/// Updates performed on the update thread
+	/// </summary>
+	public virtual void Update () {
+		Activity = VR.CVR.GetTrackedDeviceActivityLevel( DeviceIndex );
+	}
+
+	EDeviceActivityLevel activity = EDeviceActivityLevel.k_EDeviceActivityLevel_Unknown;
+	public EDeviceActivityLevel Activity {
+		get => activity;
+		private set {
+			if ( activity == value )
+				return;
+
+			activity = value;
+			ActivityChanged?.Invoke( value );
+		}
+	}
+
+	/// <summary>
+	/// Called when device changes activity level, on the update thread
+	/// </summary>
+	public event Action<EDeviceActivityLevel>? ActivityChanged;
 
 	public class Owner {
 		public VrDevice Device { get; internal init; } = null!;
@@ -166,10 +240,19 @@ public class VrDevice {
 			get => Device.Position;
 			set => Device.Position = value;
 		}
+		public Vector3 Velocity {
+			get => Device.Velocity;
+			set => Device.Velocity = value;
+		}
 		public Quaternion Rotation {
 			get => Device.Rotation;
 			set => Device.Rotation = value;
 		}
+		public Vector3 AngularVelocity {
+			get => Device.AngularVelocity;
+			set => Device.AngularVelocity = value;
+		}
+
 		public Vector3 RenderPosition {
 			get => Device.RenderPosition;
 			set => Device.RenderPosition = value;
