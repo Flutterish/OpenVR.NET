@@ -18,7 +18,7 @@ namespace OpenVR.NET.Components {
 					return model = new ComponentModel { Name = sb.ToString() };
 				}
 				else {
-					Events.Error( $"Couldn't find a model for {nameof(Component)} (Device Index: {DeviceIndex}). Using fallback..." );
+					Events.Error( $"Couldn't find a model for {nameof( Component )} (Device Index: {DeviceIndex}). Using fallback..." );
 					try {
 						return model = GetFallbackModel();
 					}

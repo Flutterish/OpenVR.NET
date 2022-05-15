@@ -62,8 +62,8 @@ namespace OpenVR.NET.Manifests {
 			};
 			foreach ( var i in source.Localizations ) {
 				app.Strings.Add( i.LanguageTag, new() {
-					[ "name" ] = i.Name,
-					[ "description" ] = i.Description
+					["name"] = i.Name,
+					["description"] = i.Description
 				} );
 			}
 			vrManifest.Apps.Add( app );
@@ -72,9 +72,9 @@ namespace OpenVR.NET.Manifests {
 		}
 
 		static Dictionary<string, string> getLocale ( string languageTag, List<Dictionary<string, string>> locales ) {
-			Dictionary<string, string>? list = locales.FirstOrDefault( x => x[ "language_tag" ] == languageTag );
+			Dictionary<string, string>? list = locales.FirstOrDefault( x => x["language_tag"] == languageTag );
 			if ( list is null ) {
-				list = new Dictionary<string, string> { [ "language_tag" ] = languageTag };
+				list = new Dictionary<string, string> { ["language_tag"] = languageTag };
 				locales.Add( list );
 			}
 			return list;

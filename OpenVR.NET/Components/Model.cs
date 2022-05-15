@@ -44,11 +44,11 @@ namespace OpenVR.NET {
 					}
 
 					int indexCount = (int)model.unTriangleCount * 3;
-					var indices = new short[ indexCount ];
+					var indices = new short[indexCount];
 					Marshal.Copy( model.rIndexData, indices, 0, indices.Length );
 
 					for ( int iTri = 0; iTri < model.unTriangleCount; iTri++ ) {
-						addTriangle?.Invoke( indices[ iTri * 3 + 2 ], indices[ iTri * 3 + 1 ], indices[ iTri * 3 + 0 ] );
+						addTriangle?.Invoke( indices[iTri * 3 + 2], indices[iTri * 3 + 1], indices[iTri * 3 + 0] );
 					}
 					// TODO load textures
 					// https://github.com/ValveSoftware/steamvr_unity_plugin/blob/9cc1a76226648d8deb7f3900ab277dfaaa80d60c/Assets/SteamVR/Scripts/SteamVR_RenderModel.cs#L377

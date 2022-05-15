@@ -14,8 +14,8 @@ namespace OpenVR.NET {
 	public static class VR {
 		// NOTE platform specific binaries for openVR are there: https://github.com/ValveSoftware/openvr/tree/master/bin
 		private static VrState vrState = VrState.NotInitialized;
-		public static VrState VrState { 
-			get => vrState; 
+		public static VrState VrState {
+			get => vrState;
 			private set {
 				if ( vrState == value ) return;
 
@@ -69,7 +69,7 @@ namespace OpenVR.NET {
 		/// <summary>
 		/// How much time has passed since last draw frame.
 		/// </summary>
-		public static double DeltaTime => (now - lastTime)/1000;
+		public static double DeltaTime => ( now - lastTime ) / 1000;
 		public static ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
 		static void InitializeOpenVR () {
 			// TODO log/explain startup errors https://github.com/ValveSoftware/openvr/wiki/API-Documentation
@@ -80,10 +80,16 @@ namespace OpenVR.NET {
 			if ( ActionManifest is not null ) setManifest( ActionManifest );
 		}
 
-		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
-		private static readonly TrackedDevicePose_t[] trackedGameDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
+		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
+		private static readonly TrackedDevicePose_t[] trackedGameDevices = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 		static void ReadVrPoses () {
 			// this blocks on the draw thread but it needs to be there ( it limits fps to headset framerate so its fine )
+			if ( Valve.VR.OpenVR.Compositor is null )
+				return;
+			if ( trackedRenderDevices is null )
+				throw new Exception( "trackedRenderDevices is null" );
+			if ( trackedGameDevices is null )
+				throw new Exception( "trackedGameDevices is null" );
 			var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( trackedRenderDevices, trackedGameDevices );
 			if ( error != EVRCompositorError.None ) {
 				Events.Error( $"Pose error: {error}" );
@@ -92,7 +98,7 @@ namespace OpenVR.NET {
 
 			for ( int i = 0; i < trackedRenderDevices.Length + trackedGameDevices.Length; i++ ) {
 				int index = i < trackedRenderDevices.Length ? i : ( i - trackedRenderDevices.Length );
-				var device = i < trackedRenderDevices.Length ? trackedRenderDevices[ index ] : trackedGameDevices[ index ];
+				var device = i < trackedRenderDevices.Length ? trackedRenderDevices[index] : trackedGameDevices[index];
 				if ( device.bPoseIsValid && device.bDeviceIsConnected ) {
 					switch ( Valve.VR.OpenVR.System.GetTrackedDeviceClass( (uint)i ) ) {
 						case ETrackedDeviceClass.HMD:
@@ -119,15 +125,15 @@ namespace OpenVR.NET {
 								Current.Controllers.Add( i, controller );
 								NewControllerAdded?.Invoke( controller );
 							}
-							Current.Controllers[ i ].Position = device.mDeviceToAbsoluteTracking.ExtractPosition();
-							Current.Controllers[ i ].Rotation = device.mDeviceToAbsoluteTracking.ExtractRotation();
-							Current.Controllers[ i ].IsEnabled = device.bDeviceIsConnected;
+							Current.Controllers[i].Position = device.mDeviceToAbsoluteTracking.ExtractPosition();
+							Current.Controllers[i].Rotation = device.mDeviceToAbsoluteTracking.ExtractRotation();
+							Current.Controllers[i].IsEnabled = device.bDeviceIsConnected;
 							break;
 					}
 				}
 				else if ( i == index ) {
 					if ( Current.Controllers.ContainsKey( i ) ) {
-						Current.Controllers[ i ].IsEnabled = false;
+						Current.Controllers[i].IsEnabled = false;
 					}
 				}
 			}
@@ -144,7 +150,7 @@ namespace OpenVR.NET {
 		public static Controller? SecondaryController {
 			get {
 				var main = MainController;
-				return Current.Controllers.Values.FirstOrDefault( x => x!= main && x.IsEnabled );
+				return Current.Controllers.Values.FirstOrDefault( x => x != main && x.IsEnabled );
 			}
 		}
 		public static Controller? LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
@@ -217,7 +223,7 @@ namespace OpenVR.NET {
 		public static Manifest? ActionManifest { get; private set; }
 		public static void SetManifest ( Manifest manifest ) {
 			if ( ActionManifest is not null ) {
-				throw new InvalidOperationException( $"{nameof(ActionManifest)} is already declared." );
+				throw new InvalidOperationException( $"{nameof( ActionManifest )} is already declared." );
 			}
 			ActionManifest = manifest;
 			if ( VrState.HasFlag( VrState.OK ) ) setManifest( ActionManifest );
@@ -237,7 +243,7 @@ namespace OpenVR.NET {
 			File.WriteAllText( vrManifestPath, System.Text.Json.JsonSerializer.Serialize( raw.vrManifest, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true } ) );
 			var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( vrManifestPath, true );
 			if ( error != EVRApplicationError.None ) {
-				Events.Error($"Couldn't set application vr manifest: {error}" );
+				Events.Error( $"Couldn't set application vr manifest: {error}" );
 			}
 			var error2 = Valve.VR.OpenVR.Input.SetActionManifestPath( actionManifestPath );
 			if ( error2 != EVRInputError.None ) {
@@ -249,7 +255,7 @@ namespace OpenVR.NET {
 					ulong handle = 0;
 					Valve.VR.OpenVR.Input.GetActionHandle( action.FullPath, ref handle );
 					var comp = action.CreateComponent( handle );
-					components.Add( comp.Name, new() { [ nullController ] = comp } );
+					components.Add( comp.Name, new() { [nullController] = comp } );
 				}
 			}
 
@@ -299,7 +305,7 @@ namespace OpenVR.NET {
 					return comp as T;
 				}
 				else {
-					comp = cat[ nullController ].CopyWithRestriction( controller.Handle );
+					comp = cat[nullController].CopyWithRestriction( controller.Handle );
 					lock ( componentLock ) { cat.Add( controller, comp ); }
 					return comp as T;
 				}
@@ -329,12 +335,12 @@ namespace OpenVR.NET {
 
 	public static class EVRInitErrorExtensions {
 		private static Dictionary<EVRInitError, string> descriptions = new() {
-			[ EVRInitError.Init_HmdNotFound ] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on.",
-			[ EVRInitError.Init_HmdNotFoundPresenceFailed ] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on."
+			[EVRInitError.Init_HmdNotFound] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on.",
+			[EVRInitError.Init_HmdNotFoundPresenceFailed] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on."
 		};
 
 		public static string GetReadableDescription ( this EVRInitError error ) {
-			if ( descriptions.ContainsKey( error ) ) return $"{descriptions[ error ]} ({error})";
+			if ( descriptions.ContainsKey( error ) ) return $"{descriptions[error]} ({error})";
 			else return $"{error}";
 		}
 	}

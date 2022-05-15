@@ -67,7 +67,7 @@ namespace OpenVR.NET.Manifests {
 		/// Binds an event to run when the value was updated.
 		/// </summary>
 		public void BindValueUpdated ( System.Action<T> action, bool runOnceImmediately = false ) {
-			ValueUpdated += v => action(v.NewValue);
+			ValueUpdated += v => action( v.NewValue );
 			if ( runOnceImmediately ) action( value );
 		}
 
@@ -86,7 +86,7 @@ namespace OpenVR.NET.Manifests {
 		/// Binds an event to run when the value was updated and was different from the previous one.
 		/// </summary>
 		public void BindValueChanged ( System.Action<T> action, bool runOnceImmediately = false ) {
-			ValueChanged += v => action(v.NewValue);
+			ValueChanged += v => action( v.NewValue );
 			if ( runOnceImmediately ) action( value );
 		}
 	}
@@ -163,7 +163,7 @@ namespace OpenVR.NET.Manifests {
 	public class Controller3DVector : ControllerInputComponent<Vector3> {
 		public override void Update () {
 			InputAnalogActionData_t data = default;
-			var error = Valve.VR.OpenVR.Input.GetAnalogActionData( Handle, ref data, (uint)Marshal.SizeOf<InputAnalogActionData_t>(), Restriction);
+			var error = Valve.VR.OpenVR.Input.GetAnalogActionData( Handle, ref data, (uint)Marshal.SizeOf<InputAnalogActionData_t>(), Restriction );
 			if ( error != EVRInputError.None ) {
 				Events.Error( $"Cannot read input: {error}" );
 				return;

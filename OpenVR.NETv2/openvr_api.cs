@@ -8,7 +8,6 @@
 
 #if !OPENVR_XR_API
 
-using System;
 using System.Runtime.InteropServices;
 
 #if UNITY_5_3_OR_NEWER
