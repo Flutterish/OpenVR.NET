@@ -268,14 +268,27 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 	Log( $"OpenVR runtime path: `{path}`" );
 	Log( $"Headset is {( vr.IsHeadsetPresent ? "" : "not " )}present" );
 
+	if ( !vr.TryStart() ) {
+		return;
+	}
+
+	Log( $"OpenVR runtime version: `{vr.OpenVrRuntimeVersion}`" );
+
+	path = vr.InstallApp( new() {
+		AppKey = "OpenVR.NET.Tests",
+		WindowsPath = "Tests.exe",
+		LocalizedNames = new() {
+			["en_us"] = (
+				"OpenVR.NET Tests",
+				"OpenVR.NET API tests"
+			)
+		}
+	} );
+	Log( $".vrmanifest path: `{path}`" );
+
 	update.Start();
 	input.Start();
 	draw.Start();
-
-	if ( !vr.TryStart() ) {
-		running = false;
-	}
-	Log( $"OpenVR runtime version: `{vr.OpenVrRuntimeVersion}`" );
 
 	var threads = new[] { update, input, draw };
 	Console.ReadKey( true );

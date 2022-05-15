@@ -1,8 +1,11 @@
 ﻿using OpenVR.NET.Devices;
+using OpenVR.NET.Manifest;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Valve.VR;
 
 namespace OpenVR.NET;
@@ -19,10 +22,10 @@ public class VR {
 	/// Tries to initialize OpenVR. It is not required to set the manifest at this point.
 	/// This call is blocking and might take several seconds to complete.
 	/// </summary>
-	public bool TryStart () {
+	public bool TryStart ( EVRApplicationType appType = EVRApplicationType.VRApplication_Scene ) {
 		if ( State.HasFlag( VrState.NotInitialized ) ) {
 			EVRInitError error = EVRInitError.None;
-			CVR = Valve.VR.OpenVR.Init( ref error );
+			CVR = Valve.VR.OpenVR.Init( ref error, appType );
 			if ( error is EVRInitError.None ) {
 				State = VrState.OK;
 				drawContext = new( this );
@@ -52,6 +55,51 @@ public class VR {
 	/// </summary>
 	public void GracefullyExit () {
 		CVR.AcknowledgeQuit_Exiting();
+	}
+
+	/// <summary>
+	/// Installs the app/updates the vrmanifest file. If a path is provided,
+	/// the .vrmanifest file will be saved there, otherwise it will be saved to the current directory.
+	/// Returns the absolute path to the .vrmanifest file, or <see langword="null"/> if the installation failed.
+	/// This has to be called after initializing vr.
+	/// Set <paramref name="development"/> to <see langword="true"/> for quick iteration with the manifest file,
+	/// otherwise it might take a restart of OpenVR or the OS for the changes to apply
+	/// </summary>
+	public string? InstallApp ( VrManifest manifest, string? path = null, bool development = false ) {
+		var json = JsonSerializer.Serialize( new {
+			source = "builtin",
+			applications = new VrManifest[] { manifest }
+		}, new JsonSerializerOptions {
+			IncludeFields = true,
+			WriteIndented = true,
+			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+		} );
+
+		if ( path is null )
+			path = ".vrmanifest";
+		else if ( !path.EndsWith( ".vrmanifest" ) )
+			path += ".vrmanifest";
+
+		path = Path.Combine( Directory.GetCurrentDirectory(), path );
+		File.WriteAllText( path, json );
+
+		Valve.VR.OpenVR.Applications.RemoveApplicationManifest( path );
+		var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( path, development );
+		if ( error != EVRApplicationError.None ) {
+			return null;
+		}
+
+		return path;
+	}
+
+	/// <summary>
+	/// Removes a .vrmanifest file from OpenVR, effectively uninstalling the app from it.
+	/// You should use this when updating the vrmanifests location.
+	/// This has to be called after initializing vr.
+	/// </summary>
+	public bool UninstallApp ( string vrmanifestPath ) {
+		var error = Valve.VR.OpenVR.Applications.RemoveApplicationManifest( vrmanifestPath );
+		return error is EVRApplicationError.None;
 	}
 
 	#region Draw Thread
