@@ -42,7 +42,8 @@ public class Controller : VrDevice {
 			return;
 
 		VRControllerState_t state = default;
-		if ( VR.CVR.GetControllerState( DeviceIndex, ref state, (uint)Marshal.SizeOf<VRControllerState_t>() ) ) {
+		if ( VR.CVR.GetControllerState( DeviceIndex, ref state, (uint)Marshal.SizeOf<VRControllerState_t>() ) && state.unPacketNum != lastPacketNum ) {
+			lastPacketNum = state.unPacketNum;
 			foreach ( var i in rawActions ) {
 				i.Update( state );
 			}
@@ -62,6 +63,7 @@ public class Controller : VrDevice {
 		}
 	}
 
+	uint lastPacketNum;
 	List<ILegacyAction>? rawActions;
 	/// <summary>
 	/// Legacy action if you prefer this system. Default ones are <see cref="RawButton"/>, <see cref="RawSingle"/>, <see cref="RawVector2"/> and <see cref="RawHaptic"/>.

@@ -39,10 +39,19 @@ public class VR {
 
 	/// <summary>
 	/// Exits VR. You need to make sure <see cref="UpdateDraw"/>, <see cref="UpdateInput"/> nor <see cref="Update"/> are running
-	/// and you're not loading any models before making this call
+	/// and you're not loading any models before making this call. Please be aware that if you do not terminate the running process,
+	/// the user will not return to the home scene, but will be left in the vr limbo until they launch another program (it will not terminate yours)
 	/// </summary>
 	public void Exit () {
 		Valve.VR.OpenVR.Shutdown();
+	}
+
+	/// <summary>
+	/// When the <see cref="EVREventType.VREvent_Quit"/> event is received, call this to extend time
+	/// before OpenVR termintes the process
+	/// </summary>
+	public void GracefullyExit () {
+		CVR.AcknowledgeQuit_Exiting();
 	}
 
 	#region Draw Thread
@@ -187,6 +196,7 @@ public class VR {
 	#endregion
 	#region Update Thread
 	ConcurrentQueue<Action> updateScheduler = new();
+	bool isPasued = false;
 
 	/// <summary>
 	/// Invokes the update thread related events and polls vr events.
@@ -199,20 +209,41 @@ public class VR {
 		if ( !State.HasFlag( VrState.OK ) )
 			return;
 
-		VREvent_t e = default;
-		while ( CVR.PollNextEvent( ref e, (uint)Marshal.SizeOf<VREvent_t>() ) ) {
-			var type = (EVREventType)e.eventType;
-			var device = trackedDevices.FirstOrDefault( x => x.DeviceIndex == e.trackedDeviceIndex );
-			var age = e.eventAgeSeconds;
-			var data = e.data;
+		if ( Events.AnyOnOpenVrEventHandlers ) {
+			VREvent_t e = default;
+			while ( CVR.PollNextEvent( ref e, (uint)Marshal.SizeOf<VREvent_t>() ) ) {
+				var type = (EVREventType)e.eventType;
+				var device = trackedDevices.FirstOrDefault( x => x.DeviceIndex == e.trackedDeviceIndex );
+				var age = e.eventAgeSeconds;
+				var data = e.data;
 
-			Events.Event( type, device, age, data );
+				Events.Event( type, device, age, data );
+			}
+		}
+
+		if ( CVR.ShouldApplicationPause() != isPasued ) {
+			isPasued = !isPasued;
+			if ( isPasued )
+				UserDistracted?.Invoke();
+			else
+				UserFocused?.Invoke();
 		}
 
 		foreach ( var i in trackedDevices ) {
 			i.Update();
 		}
 	}
+
+	/// <summary>
+	/// Called on the update thread when the user is doing something else than interacting with the application,
+	/// for example changing settings in the overlay
+	/// </summary>
+	public event Action? UserDistracted;
+	/// <summary>
+	/// Called on the update thread when the user stops interacting with something else than the application,
+	/// for example changing settings in the overlay
+	/// </summary>
+	public event Action? UserFocused;
 	#endregion
 
 	HashSet<VrDevice> trackedDevices = new();
@@ -233,6 +264,7 @@ public class VR {
 	[MemberNotNullWhen( true, nameof( OpenVrRuntimePath ) )]
 	public bool IsOpenVrRuntimeInstalled => Valve.VR.OpenVR.IsRuntimeInstalled();
 	public string? OpenVrRuntimePath => Valve.VR.OpenVR.RuntimePath();
+	public string? OpenVrRuntimeVersion => CVR.GetRuntimeVersion();
 
 	Vector3 extractPosition ( ref HmdMatrix34_t mat ) {
 		return new Vector3( mat.m3, mat.m7, -mat.m11 );

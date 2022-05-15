@@ -275,6 +275,7 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 	if ( !vr.TryStart() ) {
 		running = false;
 	}
+	Log( $"OpenVR runtime version: `{vr.OpenVrRuntimeVersion}`" );
 
 	var threads = new[] { update, input, draw };
 	Console.ReadKey( true );
@@ -282,6 +283,7 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 	while ( threads.Any( x => x.ThreadState is ThreadState.Running ) ) {
 		await Task.Delay( 100 );
 	}
+	Log( "Exiting..." );
 	vr.Exit();
 }
 else {

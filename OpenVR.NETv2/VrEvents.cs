@@ -18,12 +18,15 @@ public class VrEvents {
 		OnException?.Invoke( messgae, type, context, e );
 	}
 
+	public bool AnyOnOpenVrEventHandlers => OnOpenVrEvent is not null;
+
 	/// <summary>
 	/// Log from within the OpenVR.NET library. Called on related threads.
 	/// </summary>
 	public event Action<string, EventType, object?>? OnLog;
 	/// <summary>
 	/// OpenVR events. Called on the update thread.
+	/// Events will not be polled unless this has subscribers
 	/// </summary>
 	public event OpenVrEventHandler? OnOpenVrEvent;
 	/// <summary>
