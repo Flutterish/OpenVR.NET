@@ -54,6 +54,7 @@ input = new Thread( createInterval( 4, () => {
 	Log( "Input thread stopped", input );
 } ) ) { Name = "Input" };
 
+bool hiddenMeshSaved = false;
 draw = new Thread( createInterval( 17, () => {
 	Log( "Draw thread started", draw );
 }, ( time, deltaTime ) => {
@@ -66,7 +67,35 @@ draw = new Thread( createInterval( 17, () => {
 	if ( ctx is null )
 		return;
 
+	if ( !hiddenMeshSaved ) {
+		hiddenMeshSaved = true;
+		StringBuilder left = new();
+		int i = 1;
+		ctx.GetHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
+			left.AppendLine( $"v {a.X} {a.Y} 0" );
+			left.AppendLine( $"v {b.X} {b.Y} 0" );
+			left.AppendLine( $"v {c.X} {c.Y} 0" );
+			left.AppendLine( $"f {i++} {i++} {i++}" );
+		} );
 
+		StringBuilder right = new();
+		i = 1;
+		ctx.GetHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
+			right.AppendLine( $"v {a.X} {a.Y} 0" );
+			right.AppendLine( $"v {b.X} {b.Y} 0" );
+			right.AppendLine( $"v {c.X} {c.Y} 0" );
+			right.AppendLine( $"f {i++} {i++} {i++}" );
+		} );
+
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./leftHiddenMesh.obj", left.ToString() );
+			Log( "Saved left eye hidden mesh to `./leftHiddenMesh.obj`" );
+		} );
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./rightHiddenMesh.obj", right.ToString() );
+			Log( "Saved right eye hidden mesh to `./rightHiddenMesh.obj`" );
+		} );
+	}
 }, () => {
 	Log( "Draw thread stopped", draw );
 } ) ) { Name = "Draw" };
@@ -177,6 +206,8 @@ vr.Events.OnLog += ( msg, type, ctx ) => {
 };
 
 vr.Events.OnOpenVrEvent += ( EVREventType type, VrDevice? device, float age, in VREvent_Data_t data ) => {
+	return;
+
 	object? getProp ( ETrackedDeviceProperty prop, VrDevice device ) {
 		uint deviceIndex = device.DeviceIndex;
 		ETrackedPropertyError error = ETrackedPropertyError.TrackedProp_Success;
