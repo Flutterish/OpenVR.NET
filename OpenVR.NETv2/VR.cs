@@ -12,11 +12,14 @@ namespace OpenVR.NET;
 
 /// <summary>
 /// A multithreaded, object oriented wrapper around OpenVR.
-/// Left handed coordinate system - Y is up, X is right, Z is forward
+/// Left handed coordinate system - Y is up, X is right, Z is forward.
 /// </summary>
 public class VR {
 	public VrState State { get; private set; } = VrState.NotInitialized;
 	public readonly VrEvents Events = new();
+	Chaperone? chaperone;
+	/// <inheritdoc cref="IChaperone"/>
+	public IChaperone Chaperone => chaperone ??= new( this );
 
 	private object[]? interfaces; // this is used to prevent a race condition while initializing openvr interfaces on other threads
 	/// <summary>
@@ -148,6 +151,7 @@ public class VR {
 		else return null;
 	}
 
+	bool hasFocus = true;
 	ETrackingUniverseOrigin origin = (ETrackingUniverseOrigin)( -1 );
 	TrackedDevicePose_t[] renderPoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
@@ -162,10 +166,17 @@ public class VR {
 		}
 
 		var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( renderPoses, gamePoses );
-		if ( error != EVRCompositorError.None ) {
+		if ( error is EVRCompositorError.DoNotHaveFocus ) {
+			if ( hasFocus ) {
+				hasFocus = false;
+				Events.Log( $"Player pose could not be retreived", EventType.NoFous, error );
+			}
+		}
+		else if ( error != EVRCompositorError.None ) {
 			Events.Log( $"Player pose could not be retreived", EventType.CoundntFetchPlayerPose, error );
 			return;
 		}
+		hasFocus = true;
 
 		for ( int i = 0; i < renderPoses.Length; i++ ) {
 			var type = CVR.GetTrackedDeviceClass( (uint)i );
@@ -299,6 +310,7 @@ public class VR {
 				UserFocused?.Invoke();
 		}
 
+		chaperone?.Update();
 		foreach ( var i in trackedDevices ) {
 			i.Update();
 		}

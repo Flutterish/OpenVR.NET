@@ -51,5 +51,7 @@ public enum EventType {
 
 	FrameSubmitError,
 
+	NoFous,
+
 	VrEvent
 }

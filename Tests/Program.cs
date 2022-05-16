@@ -286,6 +286,8 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 	} );
 	Log( $".vrmanifest path: `{path}`" );
 
+	var bounds = vr.Chaperone.PlayfieldBounds;
+
 	update.Start();
 	input.Start();
 	draw.Start();
