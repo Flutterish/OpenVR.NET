@@ -18,15 +18,37 @@ public class VR {
 	public VrState State { get; private set; } = VrState.NotInitialized;
 	public readonly VrEvents Events = new();
 
+	private object[]? interfaces; // this is used to prevent a race condition while initializing openvr interfaces on other threads
 	/// <summary>
-	/// Tries to initialize OpenVR. It is not required to set the manifest at this point.
+	/// Tries to initialize OpenVR.
 	/// This call is blocking and might take several seconds to complete.
+	/// You should call this on a separate woker thread in order not to block other threads
 	/// </summary>
 	public bool TryStart ( EVRApplicationType appType = EVRApplicationType.VRApplication_Scene ) {
 		if ( State.HasFlag( VrState.NotInitialized ) ) {
 			EVRInitError error = EVRInitError.None;
 			CVR = Valve.VR.OpenVR.Init( ref error, appType );
 			if ( error is EVRInitError.None ) {
+				interfaces = new object[] {
+					Valve.VR.OpenVR.Applications,
+					Valve.VR.OpenVR.Chaperone,
+					Valve.VR.OpenVR.ChaperoneSetup,
+					Valve.VR.OpenVR.Compositor,
+					Valve.VR.OpenVR.Debug,
+					Valve.VR.OpenVR.ExtendedDisplay,
+					Valve.VR.OpenVR.HeadsetView,
+					Valve.VR.OpenVR.Input,
+					Valve.VR.OpenVR.IOBuffer,
+					Valve.VR.OpenVR.Notifications,
+					Valve.VR.OpenVR.Overlay,
+					Valve.VR.OpenVR.OverlayView,
+					Valve.VR.OpenVR.RenderModels,
+					Valve.VR.OpenVR.Screenshots,
+					Valve.VR.OpenVR.Settings,
+					Valve.VR.OpenVR.SpatialAnchors,
+					Valve.VR.OpenVR.System,
+					Valve.VR.OpenVR.TrackedCamera
+				};
 				State = VrState.OK;
 				drawContext = new( this );
 				Events.Log( "OpenVR initialized succesfuly", EventType.InitializationSuccess, VrState.OK );
@@ -46,6 +68,7 @@ public class VR {
 	/// the user will not return to the home scene, but will be left in the vr limbo until they launch another program (it will not terminate yours)
 	/// </summary>
 	public void Exit () {
+		interfaces = null;
 		Valve.VR.OpenVR.Shutdown();
 	}
 
@@ -62,10 +85,9 @@ public class VR {
 	/// the .vrmanifest file will be saved there, otherwise it will be saved to the current directory.
 	/// Returns the absolute path to the .vrmanifest file, or <see langword="null"/> if the installation failed.
 	/// This has to be called after initializing vr.
-	/// Set <paramref name="development"/> to <see langword="true"/> for quick iteration with the manifest file,
-	/// otherwise it might take a restart of OpenVR or the OS for the changes to apply
+	/// Note that updating the manifest might require a restart of OpenVR Runtime or the OS, as some values, such as images might be cached
 	/// </summary>
-	public string? InstallApp ( VrManifest manifest, string? path = null, bool development = false ) {
+	public string? InstallApp ( VrManifest manifest, string? path = null ) {
 		var json = JsonSerializer.Serialize( new {
 			source = "builtin",
 			applications = new VrManifest[] { manifest }
@@ -84,7 +106,7 @@ public class VR {
 		File.WriteAllText( path, json );
 
 		Valve.VR.OpenVR.Applications.RemoveApplicationManifest( path );
-		var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( path, development );
+		var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( path, false );
 		if ( error != EVRApplicationError.None ) {
 			return null;
 		}
