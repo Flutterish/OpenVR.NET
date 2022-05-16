@@ -1,17 +1,97 @@
 ﻿using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text;
 using Valve.VR;
 
 namespace OpenVR.NET.Devices;
 
 public class DeviceModel {
+	public readonly string Name;
+	public DeviceModel ( string name ) {
+		Name = name;
+		JoinedModel = new() { Name = name, ModelName = name };
+	}
+
+	public bool ComponentsLoaded => components != null;
+
+	/// <summary>
+	/// A model which has all components joined together. Individual components this model is made
+	/// from can be found in <see cref="Components"/>
+	/// </summary>
+	public readonly ComponentModel JoinedModel;
+	ComponentModel[]? components;
+	/// <summary>
+	/// Components that make up the device model. Please note that some of them might be empty objects
+	/// used as a reference point such as "tip" "grip" etc
+	/// </summary>
+	public IReadOnlyList<ComponentModel> Components {
+		get {
+			if ( this.components != null )
+				return this.components;
+
+			var count = Valve.VR.OpenVR.RenderModels.GetComponentCount( Name );
+			var components = new ComponentModel[(int)count];
+			var sbLength = 256;
+			var sb = new StringBuilder( 256 );
+			for ( int i = 0; i < count; i++ ) {
+				sb.Clear();
+				var length = Valve.VR.OpenVR.RenderModels.GetComponentName( Name, (uint)i, sb, (uint)sbLength );
+				if ( length > sbLength ) {
+					sb.EnsureCapacity( sbLength = (int)length );
+					Valve.VR.OpenVR.RenderModels.GetComponentName( Name, (uint)i, sb, length );
+				}
+				var name = sb.ToString();
+				sb.Clear();
+				length = Valve.VR.OpenVR.RenderModels.GetComponentRenderModelName( Name, name, sb, (uint)sbLength );
+				if ( length > sbLength ) {
+					sb.EnsureCapacity( sbLength = (int)length );
+					Valve.VR.OpenVR.RenderModels.GetComponentRenderModelName( Name, name, sb, length );
+				}
+				components[i] = new() { Name = name, ModelName = sb.ToString(), ParentName = Name };
+			}
+
+			return this.components = components;
+		}
+	}
+}
+
+public class ComponentModel {
+	/// <summary>
+	/// For components other than the main device body, this is the name of the main device
+	/// </summary>
+	public string? ParentName { get; init; }
+	/// <summary>
+	/// Name of the component
+	/// </summary>
 	public string Name { get; init; } = string.Empty;
-	static readonly SemaphoreSlim loadSemaphore = new( 1, 1 );
+	/// <summary>
+	/// Render model name
+	/// </summary>
+	public string ModelName { get; init; } = string.Empty;
+	static readonly ConcurrentDictionary<string, SemaphoreSlim> modelLoadLocks = new();
+	static readonly ConcurrentDictionary<int, SemaphoreSlim> textureLoadLocks = new();
+	IntPtr? loadedModelPtr;
+	IntPtr? loadedTexturePtr;
+	int? loadedTextureIndex;
 
 	public delegate void AddVertice ( Vector3 position, Vector3 normal, Vector2 uv );
+	/// <param name="id">A unique ID that represents the texture. You can cache textures with this key to prevent loading them again</param>
+	public delegate void AddTexture ( int id, Func<Task<Image<Rgba32>?>> load );
+
+	public enum Context {
+		Model,
+		Texture
+	}
+
+	public enum ComponentType {
+		Error,
+		Component,
+		ReferencePoint
+	}
 
 	/// <summary>
 	/// Loads the model asynchronously (on a thread pool).
@@ -20,24 +100,23 @@ public class DeviceModel {
 	/// </summary>
 	public async Task LoadAsync (
 		Action? begin = null,
-		Action? finish = null,
+		Action<ComponentType>? finish = null,
 		AddVertice? addVertice = null,
 		Action<short, short, short>? addTriangle = null,
-		Action<Image<Rgba32>>? addTexture = null,
-		Action<EVRRenderModelError>? onError = null ) {
+		AddTexture? addTexture = null,
+		Action<EVRRenderModelError, Context>? onError = null ) {
 
-		// TODO figure out if we can load different models at the same time
-		// (last time there were problems, but it might just be an issue on my side)
-		//	~Peri
-		await loadSemaphore.WaitAsync();
+		var modelLock = modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
+		await modelLock.WaitAsync();
 
 		begin?.Invoke();
 		IntPtr modelPtr = IntPtr.Zero;
 		EVRRenderModelError error;
-		while ( ( error = Valve.VR.OpenVR.RenderModels.LoadRenderModel_Async( Name, ref modelPtr ) ) is EVRRenderModelError.Loading ) {
+		while ( ( error = Valve.VR.OpenVR.RenderModels.LoadRenderModel_Async( ModelName, ref modelPtr ) ) is EVRRenderModelError.Loading ) {
 			await Task.Delay( 10 );
 		}
 
+		loadedModelPtr = modelPtr;
 		if ( error is EVRRenderModelError.None ) {
 			RenderModel_t model = new();
 
@@ -73,52 +152,89 @@ public class DeviceModel {
 				ArrayPool<short>.Shared.Return( indices );
 			}
 
-			if ( addTexture != null ) {
-				IntPtr texturePtr = IntPtr.Zero;
-				while ( ( error = Valve.VR.OpenVR.RenderModels.LoadTexture_Async( model.diffuseTextureId, ref texturePtr ) ) is EVRRenderModelError.Loading ) {
-					await Task.Delay( 10 );
-				}
+			if ( addTexture != null && model.diffuseTextureId >= 0 ) {
+				addTexture( model.diffuseTextureId, async () => {
+					var textureLock = textureLoadLocks.GetOrAdd( model.diffuseTextureId, _ => new( 1, 1 ) );
+					await textureLock.WaitAsync();
 
-				if ( error is EVRRenderModelError.None ) {
-					RenderModel_TextureMap_t texture = new();
-					if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
-						var packedModel = Marshal.PtrToStructure<RenderModel_TextureMap_t_Packed>( texturePtr );
-						packedModel.Unpack( ref texture );
+					IntPtr texturePtr = IntPtr.Zero;
+					while ( ( error = Valve.VR.OpenVR.RenderModels.LoadTexture_Async( model.diffuseTextureId, ref texturePtr ) ) is EVRRenderModelError.Loading ) {
+						await Task.Delay( 10 );
+					}
+
+					loadedTextureIndex = model.diffuseTextureId;
+					loadedTexturePtr = texturePtr;
+					if ( error is EVRRenderModelError.None ) {
+						RenderModel_TextureMap_t texture = new();
+						if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
+							var packedModel = Marshal.PtrToStructure<RenderModel_TextureMap_t_Packed>( texturePtr );
+							packedModel.Unpack( ref texture );
+						}
+						else {
+							texture = Marshal.PtrToStructure<RenderModel_TextureMap_t>( texturePtr );
+						}
+
+						var data = new byte[texture.unWidth * texture.unHeight * 4];
+						Marshal.Copy( texture.rubTextureMapData, data, 0, data.Length );
+						Image<Rgba32> image = new( texture.unWidth, texture.unHeight );
+
+						image.ProcessPixelRows( rows => {
+							int i = 0;
+							for ( int y = 0; y < texture.unHeight; y++ ) {
+								var span = rows.GetRowSpan( y );
+								for ( int x = 0; x < texture.unWidth; x++ ) {
+									span[x] = new( data[i++], data[i++], data[i++], data[i++] );
+								}
+							}
+						} );
+
+						textureLock.Release();
+						return image;
 					}
 					else {
-						texture = Marshal.PtrToStructure<RenderModel_TextureMap_t>( texturePtr );
+						onError?.Invoke( error, Context.Texture );
+						textureLock.Release();
+						return null;
 					}
-
-					var data = new byte[texture.unWidth * texture.unHeight * 4];
-					Marshal.Copy( texture.rubTextureMapData, data, 0, data.Length );
-					Image<Rgba32> image = new( texture.unWidth, texture.unHeight );
-
-					image.ProcessPixelRows( rows => {
-						int i = 0;
-						for ( int y = 0; y < texture.unHeight; y++ ) {
-							var span = rows.GetRowSpan( y );
-							for ( int x = 0; x < texture.unWidth; x++ ) {
-								span[x] = new( data[i++], data[i++], data[i++], data[i++] );
-							}
-						}
-					} );
-
-					addTexture( image );
-					Valve.VR.OpenVR.RenderModels.FreeTexture( texturePtr );
-				}
-				else {
-					onError?.Invoke( error );
-				}
+				} );
 			}
 
-			Valve.VR.OpenVR.RenderModels.FreeRenderModel( modelPtr );
-			finish?.Invoke();
+			finish?.Invoke( ComponentType.Component );
+		}
+		else if ( error is EVRRenderModelError.InvalidArg ) {
+			finish?.Invoke( ComponentType.ReferencePoint );
 		}
 		else {
-			onError?.Invoke( error );
-			finish?.Invoke();
+			onError?.Invoke( error, Context.Model );
+			finish?.Invoke( ComponentType.Error );
 		}
 
-		loadSemaphore.Release();
+		modelLock.Release();
 	}
+
+	/// <summary>
+	/// Frees unmanaged OpenVR resouces such as the model or texture.
+	/// This should be called on all components after all of them have been loaded.
+	/// Otherwise you could end up loading then freeing and then loading and freeing the
+	/// same resoure sevaral times.
+	/// </summary>
+	public async void FreeResources () {
+		if ( loadedModelPtr is IntPtr m ) {
+			var modelLock = modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
+			await modelLock.WaitAsync();
+			Valve.VR.OpenVR.RenderModels.FreeRenderModel( m );
+			loadedModelPtr = null;
+			modelLock.Release();
+		}
+		if ( loadedTextureIndex is int i && loadedTexturePtr is IntPtr t ) {
+			var textureLock = textureLoadLocks.GetOrAdd( i, _ => new( 1, 1 ) );
+			await textureLock.WaitAsync();
+			Valve.VR.OpenVR.RenderModels.FreeTexture( t );
+			loadedTextureIndex = null;
+			loadedTexturePtr = null;
+			textureLock.Release();
+		}
+	}
+
+	public bool HasLoadedResources => loadedModelPtr != null || loadedTextureIndex != null || loadedTexturePtr != null;
 }

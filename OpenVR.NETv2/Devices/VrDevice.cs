@@ -80,7 +80,7 @@ public class VrDevice {
 	/// </summary>
 	public event Action<ETrackingResult>? TrackingStateChanged;
 
-	DeviceModel? model;
+	protected DeviceModel? model;
 	public DeviceModel? Model {
 		get {
 			if ( model != null )
@@ -91,7 +91,7 @@ public class VrDevice {
 			VR.CVR.GetStringTrackedDeviceProperty( DeviceIndex, ETrackedDeviceProperty.Prop_RenderModelName_String, sb, 256, ref error );
 
 			if ( error == ETrackedPropertyError.TrackedProp_Success ) {
-				return model = new DeviceModel { Name = sb.ToString() };
+				return model = new DeviceModel( sb.ToString() );
 			}
 			else {
 				try {

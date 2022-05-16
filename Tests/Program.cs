@@ -112,25 +112,52 @@ update = new Thread( createInterval( 6, () => {
 	Log( "Update thread stopped", update );
 } ) ) { Name = "Update" };
 
+ConcurrentDictionary<int, string> textures = new();
 vr.DeviceDetected += d => {
 	Log( $"Device detected: {d} | {d.TrackingState}\n Model name: `{d.Model?.Name}`", update );
 	if ( d.Model is DeviceModel model ) {
-		StringBuilder sb = new();
-		_ = model.LoadAsync( addTexture: async tx => {
-			await tx.SaveAsPngAsync( $"./{model.Name}.png" );
-			Log( $"Saved model texture at `./{model.Name}.png`" );
-			tx.Dispose();
-		}, onError: err => {
-			Log( $"Error loading model `{model.Name}`: {err}" );
-		}, addVertice: ( v, n, uv ) => {
-			sb.AppendLine( $"v {v.X} {v.Y} {v.Z}" );
-			sb.AppendLine( $"vt {uv.X} {uv.Y}" );
-		}, addTriangle: ( a, b, c ) => {
-			sb.AppendLine( $"f {a + 1}/{a + 1}/{a + 1} {b + 1}/{b + 1}/{b + 1} {c + 1}/{c + 1}/{c + 1}" );
-		}, finish: async () => {
-			await File.WriteAllTextAsync( $"./{model.Name}.obj", sb.ToString() );
-			Log( $"Saved model at `./{model.Name}.obj`" );
-		} );
+		void save ( ComponentModel comp ) {
+			StringBuilder sb = new();
+			var name = $"{( comp.ParentName is null ? "" : $"{comp.ParentName}+" )}{comp.Name}".Replace( '/', '-' ).Replace( '\\', '-' );
+			_ = comp.LoadAsync( addTexture: async ( id, load ) => {
+				string path;
+				if ( ( path = textures.GetOrAdd( id, ( id, name ) => $"./{name}.png", name ) ) == $"./{name}.png" ) {
+					var tx = await load();
+					if ( tx != null ) {
+						await tx.SaveAsPngAsync( $"./{name}.png" );
+						Log( $"Saved model texture at `./{name}.png`" );
+						tx.Dispose();
+					}
+					else {
+						Log( $"Error: couldnt save texture at `./{name}.png`" );
+					}
+				}
+				else {
+					Log( $"{name} shares texture at `{path}`" );
+				}
+			}, onError: ( err, ctx ) => {
+				Log( $"Error loading {ctx} `{name}`: {err}" );
+			}, addVertice: ( v, n, uv ) => {
+				sb.AppendLine( $"v {v.X} {v.Y} {v.Z}" );
+				sb.AppendLine( $"vt {uv.X} {uv.Y}" );
+			}, addTriangle: ( a, b, c ) => {
+				sb.AppendLine( $"f {a + 1}/{a + 1}/{a + 1} {b + 1}/{b + 1}/{b + 1} {c + 1}/{c + 1}/{c + 1}" );
+			}, finish: async type => {
+				if ( type is ComponentModel.ComponentType.Component ) {
+					if ( !File.Exists( $"./{name}.obj" ) )
+						await File.WriteAllTextAsync( $"./{name}.obj", sb.ToString() );
+					Log( $"Saved model at `./{name}.obj`" );
+				}
+				else if ( type is ComponentModel.ComponentType.ReferencePoint ) {
+					Log( $"{name} is a reference point`" );
+				}
+			} );
+		}
+
+		save( model.JoinedModel );
+		foreach ( var i in model.Components ) {
+			save( i );
+		}
 	}
 
 	d.Enabled += () => {
@@ -295,7 +322,7 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 	var threads = new[] { update, input, draw };
 	Console.ReadKey( true );
 	running = false;
-	while ( threads.Any( x => x.ThreadState is ThreadState.Running ) ) {
+	while ( threads.Any( x => x.ThreadState is System.Threading.ThreadState.Running ) ) {
 		await Task.Delay( 100 );
 	}
 	Log( "Exiting..." );

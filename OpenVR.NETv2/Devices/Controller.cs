@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Valve.VR;
+using static OpenVR.NET.Extensions;
 
 namespace OpenVR.NET.Devices;
 
@@ -38,16 +39,43 @@ public class Controller : VrDevice {
 	/// Update the devices input (on the input thread)
 	/// </summary>
 	public void UpdateInput () {
-		if ( rawActions is null )
-			return;
-
-		VRControllerState_t state = default;
-		if ( VR.CVR.GetControllerState( DeviceIndex, ref state, (uint)Marshal.SizeOf<VRControllerState_t>() ) && state.unPacketNum != lastPacketNum ) {
-			lastPacketNum = state.unPacketNum;
-			foreach ( var i in rawActions ) {
-				i.Update( state );
+		if ( rawActions != null ) {
+			VRControllerState_t state = default;
+			if ( VR.CVR.GetControllerState( DeviceIndex, ref state, (uint)Marshal.SizeOf<VRControllerState_t>() ) && state.unPacketNum != lastPacketNum ) {
+				lastPacketNum = state.unPacketNum;
+				foreach ( var i in rawActions ) {
+					i.Update( state );
+				}
 			}
 		}
+
+		if ( model?.ComponentsLoaded == true ) {
+			if ( componentStates is null )
+				componentStates = new();
+
+			RenderModel_ControllerMode_State_t state = default;
+			RenderModel_ComponentState_t cState = default;
+			ComponentState comp = default;
+			foreach ( var i in model.Components ) {
+				if ( !Valve.VR.OpenVR.RenderModels.GetComponentStateForDevicePath( i.ParentName, i.Name, Handle, ref state, ref cState ) )
+					continue;
+
+				comp.ScrollWheelVisible = state.bScrollWheelVisible;
+				comp.LocalPosition = ExtractPosition( ref cState.mTrackingToComponentLocal );
+				comp.LocalRotation = ExtractRotation( ref cState.mTrackingToComponentLocal );
+				comp.GlobalPosition = ExtractPosition( ref cState.mTrackingToComponentRenderModel );
+				comp.GlobalRotation = ExtractRotation( ref cState.mTrackingToComponentRenderModel );
+				comp.Properties = (EVRComponentProperty)cState.uProperties;
+				componentStates[i] = comp;
+			}
+		}
+	}
+
+	Dictionary<ComponentModel, ComponentState>? componentStates;
+	public ComponentState? GetComponentState ( ComponentModel component ) {
+		if ( componentStates?.TryGetValue( component, out var state ) != true )
+			return null;
+		return state;
 	}
 
 	/// <summary>
@@ -195,5 +223,22 @@ public class Controller : VrDevice {
 		}
 
 		public EVRButtonId Type => (EVRButtonId)( -1 );
+	}
+
+	public struct ComponentState {
+		/// <summary>
+		/// Is this component currently set to be in a scroll wheel mode?
+		/// </summary>
+		public bool ScrollWheelVisible;
+
+		public Vector3 LocalPosition;
+		public Quaternion LocalRotation;
+		public Vector3 GlobalPosition;
+		public Quaternion GlobalRotation;
+
+		/// <summary>
+		/// Additional prioperties as enum flags
+		/// </summary>
+		public EVRComponentProperty Properties;
 	}
 }

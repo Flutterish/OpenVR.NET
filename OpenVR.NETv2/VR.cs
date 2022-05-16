@@ -2,11 +2,11 @@
 using OpenVR.NET.Manifest;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Valve.VR;
+using static OpenVR.NET.Extensions;
 
 namespace OpenVR.NET;
 
@@ -236,11 +236,11 @@ public class VR {
 			}
 
 			if ( pose.bPoseIsValid ) {
-				owner.RenderPosition = extractPosition( ref pose.mDeviceToAbsoluteTracking );
-				owner.RenderRotation = extractRotation( ref pose.mDeviceToAbsoluteTracking );
+				owner.RenderPosition = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
+				owner.RenderRotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
 				pose = ref gamePoses[i];
-				owner.Position = extractPosition( ref pose.mDeviceToAbsoluteTracking );
-				owner.Rotation = extractRotation( ref pose.mDeviceToAbsoluteTracking );
+				owner.Position = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
+				owner.Rotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
 				owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
 				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, pose.vAngularVelocity.v2 );
 			}
@@ -347,21 +347,4 @@ public class VR {
 	public bool IsOpenVrRuntimeInstalled => Valve.VR.OpenVR.IsRuntimeInstalled();
 	public string? OpenVrRuntimePath => Valve.VR.OpenVR.RuntimePath();
 	public string? OpenVrRuntimeVersion => CVR.GetRuntimeVersion();
-
-	Vector3 extractPosition ( ref HmdMatrix34_t mat ) {
-		return new Vector3( mat.m3, mat.m7, -mat.m11 );
-	}
-	Quaternion extractRotation ( ref HmdMatrix34_t mat ) {
-		Quaternion q = default;
-		q.W = MathF.Sqrt( MathF.Max( 0, 1 + mat.m0 + mat.m5 + mat.m10 ) ) / 2;
-		q.X = MathF.Sqrt( MathF.Max( 0, 1 + mat.m0 - mat.m5 - mat.m10 ) ) / 2;
-		q.Y = MathF.Sqrt( MathF.Max( 0, 1 - mat.m0 + mat.m5 - mat.m10 ) ) / 2;
-		q.Z = MathF.Sqrt( MathF.Max( 0, 1 - mat.m0 - mat.m5 + mat.m10 ) ) / 2;
-		q.X = MathF.CopySign( q.X, mat.m9 - mat.m6 );
-		q.Y = MathF.CopySign( q.Y, mat.m2 - mat.m8 );
-		q.Z = MathF.CopySign( q.Z, mat.m1 - mat.m4 );
-
-		var scale = 1 / q.LengthSquared();
-		return new Quaternion( q.X * -scale, q.Y * -scale, q.Z * -scale, q.W * scale );
-	}
 }
