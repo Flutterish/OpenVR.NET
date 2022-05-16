@@ -45,6 +45,10 @@ public enum EventType {
 	CoundntFetchControllerHandle,
 	CoundntFetchControllerButtons,
 	CoundntFetchControllerAxis,
+	CoundntFetchActionSetHandle,
+	CoundntFetchActionHandle,
+
+	CouldntGetInput,
 
 	ModelNotFound,
 	ModelFallbackUsed,
@@ -52,6 +56,7 @@ public enum EventType {
 	FrameSubmitError,
 
 	NoFous,
+
 
 	VrEvent
 }

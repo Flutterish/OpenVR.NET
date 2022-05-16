@@ -72,6 +72,7 @@ public class VR {
 	/// </summary>
 	public void Exit () {
 		interfaces = null;
+		CVR = null!;
 		Valve.VR.OpenVR.Shutdown();
 	}
 
@@ -95,9 +96,9 @@ public class VR {
 			source = "builtin",
 			applications = new VrManifest[] { manifest }
 		}, new JsonSerializerOptions {
-			IncludeFields = true,
+			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 			WriteIndented = true,
-			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+			IncludeFields = true
 		} );
 
 		if ( path is null )
@@ -152,7 +153,7 @@ public class VR {
 	}
 
 	bool hasFocus = true;
-	ETrackingUniverseOrigin origin = (ETrackingUniverseOrigin)( -1 );
+	public ETrackingUniverseOrigin TrackingOrigin { get; private set; } = (ETrackingUniverseOrigin)( -1 );
 	TrackedDevicePose_t[] renderPoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	Dictionary<int, (VrDevice device, VrDevice.Owner owner)> trackedDeviceOwners = new();
@@ -160,8 +161,8 @@ public class VR {
 	// although in theory this should be on the update thread,
 	// this updates once per draw frame and is required to be called to allow for drawing
 	void pollPoses ( ETrackingUniverseOrigin origin ) {
-		if ( origin != this.origin ) {
-			this.origin = origin;
+		if ( origin != TrackingOrigin ) {
+			TrackingOrigin = origin;
 			Valve.VR.OpenVR.Compositor.SetTrackingSpace( origin );
 		}
 
@@ -242,7 +243,7 @@ public class VR {
 				owner.Position = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
 				owner.Rotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
 				owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
-				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, pose.vAngularVelocity.v2 );
+				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, -pose.vAngularVelocity.v2 );
 			}
 
 			if ( pose.eTrackingResult != owner.offThreadTrackingState ) {
@@ -269,6 +270,18 @@ public class VR {
 
 		if ( !State.HasFlag( VrState.OK ) )
 			return;
+
+		if ( actionSets != null ) {
+			var error = Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
+			if ( error != EVRInputError.None ) {
+				Events.Log( "Could not read input state", EventType.CouldntGetInput, error );
+				return;
+			}
+
+			foreach ( var i in actions.Values ) {
+				i.Update();
+			}
+		}
 
 		foreach ( var i in updateableInputDevices ) {
 			i.UpdateInput();
@@ -347,4 +360,89 @@ public class VR {
 	public bool IsOpenVrRuntimeInstalled => Valve.VR.OpenVR.IsRuntimeInstalled();
 	public string? OpenVrRuntimePath => Valve.VR.OpenVR.RuntimePath();
 	public string? OpenVrRuntimeVersion => CVR.GetRuntimeVersion();
+
+	IActionManifest? actionManifest;
+	Dictionary<Enum, IAction> definedActions = new();
+	VRActiveActionSet_t[]? actionSets;
+	/// <summary>
+	/// Fetches an action defined in the action manifest
+	/// </summary>
+	public IAction ActionFor<T> ( T action ) where T : struct, Enum
+		=> definedActions[action];
+	/// <summary>
+	/// Sets the action manifest. This method will throw if the manifest couldnt be set
+	/// </summary>
+	public void SetActionManifest ( IActionManifest manifest, string? path = null ) {
+		path ??= "ActionManifest.json";
+		File.AppendAllText( path, manifest.ToJson() );
+		var error = Valve.VR.OpenVR.Input.SetActionManifestPath( path );
+		if ( error != EVRInputError.None ) {
+			throw new Exception( $"Could not set action manifest: {error}" );
+		}
+
+		var actionSets = manifest.ActionSets.Select( set => {
+			ulong handle = 0;
+			var error = Valve.VR.OpenVR.Input.GetActionSetHandle( set.Path, ref handle );
+			if ( error != EVRInputError.None ) {
+				Events.Log( $"Could not get handle for action set {set.Name}", EventType.CoundntFetchActionSetHandle, error );
+			}
+
+			return new VRActiveActionSet_t { ulActionSet = handle };
+		} ).ToArray();
+
+		foreach ( var set in manifest.ActionSets ) {
+			foreach ( var action in manifest.ActionsForSet( set ) ) {
+				definedActions.Add( action.Name, action );
+			}
+		}
+
+		ETrackedControllerRole hand = ETrackedControllerRole.Invalid;
+		error = Valve.VR.OpenVR.Input.GetDominantHand( ref hand );
+		if ( error is EVRInputError.None )
+			DominantHand = hand;
+
+		actionManifest = manifest;
+		inputScheduler.Enqueue( () => {
+			this.actionSets = actionSets;
+			actionsLoaded?.Invoke();
+			actionsLoaded = null;
+		} );
+	}
+
+	public ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
+
+	/// <summary>
+	/// Binds an action to perform when the action manifest is loaded,
+	/// or if its already loaded, its invoked immmediately.
+	/// This is safe to call on the input thread
+	/// </summary>
+	public void BindActionsLoaded ( Action action ) {
+		if ( actionManifest != null )
+			action();
+		else
+			actionsLoaded += action;
+	}
+	event Action? actionsLoaded;
+
+	Dictionary<Enum, Input.Action> actions = new();
+	/// <summary>
+	/// Gets an action defined in the action manifest. This is safe to use on the input thread
+	/// </summary>
+	/// <typeparam name="T">
+	/// The action type, coresponding to the defined <see cref="ActionType"/>.
+	/// Currently implemented ones are <see cref="Input.BooleanAction"/>, <see cref="Input.ScalarAction"/>,
+	/// <see cref="Input.Vector2Action"/>, <see cref="Input.Vector3Action"/>, <see cref="Input.HapticAction"/>,
+	/// <see cref="Input.PoseAction"/> and <see cref="Input.HandSkeletonAction"/>
+	/// </typeparam>
+	public T? GetAction<T, Taction> ( Taction action, Controller? controller = null ) where Taction : struct, Enum where T : Input.Action {
+		if ( controller != null )
+			return controller.GetAction<T, Taction>( action );
+
+		if ( !actions.TryGetValue( action, out var value ) ) {
+			var @params = definedActions[action];
+			actions.Add( action, @params.CreateAction( this, controller ) );
+		}
+
+		return value as T;
+	}
 }

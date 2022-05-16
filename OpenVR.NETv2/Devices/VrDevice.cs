@@ -27,7 +27,7 @@ public class VrDevice {
 	/// </summary>
 	public Quaternion Rotation { get; protected set; }
 	/// <summary>
-	/// Angular velocity in radians per second (?) to be used on the input thread [https://github.com/ValveSoftware/openvr/blob/4c85abcb7f7f1f02adaf3812018c99fc593bc341/headers/openvr.h#L260]
+	/// Angular velocity in radians per second (?) to be used on the input thread <see href="https://github.com/ValveSoftware/openvr/blob/4c85abcb7f7f1f02adaf3812018c99fc593bc341/headers/openvr.h#L260"/>
 	/// </summary>
 	public Vector3 AngularVelocity { get; protected set; }
 	/// <summary>

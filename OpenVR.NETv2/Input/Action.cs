@@ -6,9 +6,11 @@
 /// Action events are invoked on the input thread
 /// </summary>
 public abstract class Action {
-	public ulong SourceHandle { get; init; } = Valve.VR.OpenVR.k_ulInvalidInputValueHandle;
-
+	/// <summary>
+	/// Updates the state of this action, on the input thread
+	/// </summary>
 	public abstract void Update ();
 
-	public abstract Action Clone ( ulong sourceHandle );
+	public ulong DeviceHandle { get; init; } = Valve.VR.OpenVR.k_ulInvalidActionHandle;
+	public ulong SourceHandle { get; init; } = Valve.VR.OpenVR.k_ulInvalidInputValueHandle;
 }

@@ -33,7 +33,7 @@ public class Controller : VrDevice {
 	}
 
 	public readonly ETrackedControllerRole Role = ETrackedControllerRole.Invalid;
-	protected readonly ulong Handle;
+	public readonly ulong Handle;
 
 	/// <summary>
 	/// Update the devices input (on the input thread)
@@ -47,6 +47,10 @@ public class Controller : VrDevice {
 					i.Update( state );
 				}
 			}
+		}
+
+		foreach ( var i in actions.Values ) {
+			i.Update();
 		}
 
 		if ( model?.ComponentsLoaded == true ) {
@@ -119,7 +123,7 @@ public class Controller : VrDevice {
 					if ( ( buttonsMask & mask ) == 0 )
 						continue;
 
-					rawActions.Add( new RawButton { SourceHandle = Handle, Mask = mask, Type = (EVRButtonId)i } );
+					rawActions.Add( new RawButton { Mask = mask, Type = (EVRButtonId)i } );
 				}
 			}
 
@@ -136,10 +140,10 @@ public class Controller : VrDevice {
 				}
 
 				if ( type is EVRControllerAxisType.k_eControllerAxis_Trigger ) {
-					rawActions.Add( new RawSingle { SourceHandle = Handle, Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
+					rawActions.Add( new RawSingle { Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
 				}
 				else if ( type is EVRControllerAxisType.k_eControllerAxis_TrackPad or EVRControllerAxisType.k_eControllerAxis_Joystick ) {
-					rawActions.Add( new RawVector2 { SourceHandle = Handle, Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
+					rawActions.Add( new RawVector2 { Index = i, AxisType = type, Type = EVRButtonId.k_EButton_Axis0 + i } );
 				}
 			}
 
@@ -147,6 +151,17 @@ public class Controller : VrDevice {
 
 			return rawActions;
 		}
+	}
+
+	Dictionary<Enum, Input.Action> actions = new();
+	/// <inheritdoc cref="VR.GetAction{T, Taction}(Taction, Controller?)"/>
+	public T? GetAction<T, Taction> ( Taction action ) where Taction : struct, Enum where T : Input.Action {
+		if ( !actions.TryGetValue( action, out var value ) ) {
+			var @params = VR.ActionFor( action );
+			actions.Add( action, @params.CreateAction( VR, this ) );
+		}
+
+		return value as T;
 	}
 
 	/// <summary>
@@ -173,9 +188,6 @@ public class Controller : VrDevice {
 				_ => state.rAxis4
 			};
 		}
-
-		public sealed override Input.Action Clone ( ulong sourceHandle )
-			=> throw new InvalidOperationException( $"Can not clone raw inputs" );
 
 		public EVRButtonId Type { get; init; }
 	}
