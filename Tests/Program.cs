@@ -1,16 +1,20 @@
-﻿#define LEGACY_INPUT
+﻿//#define LEGACY_INPUT
 
 using OpenVR.NET;
 using OpenVR.NET.Devices;
+using OpenVR.NET.Input;
+using OpenVR.NET.Manifest;
 using SixLabors.ImageSharp;
 using System.Collections.Concurrent;
 using System.Text;
+using Tests;
 using Valve.VR;
+using Action = System.Action;
 
 bool running = true;
 var vr = new VR();
 
-ThreadStart createInterval ( int ms, Action init, Action<long, long> action, Action finalize ) {
+ThreadStart createInterval ( int ms, Action init, System.Action<long, long> action, Action finalize ) {
 	return () => {
 		init();
 		var lastTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -120,8 +124,7 @@ vr.DeviceDetected += d => {
 			StringBuilder sb = new();
 			var name = $"{( comp.ParentName is null ? "" : $"{comp.ParentName}+" )}{comp.Name}".Replace( '/', '-' ).Replace( '\\', '-' );
 			_ = comp.LoadAsync( addTexture: async ( id, load ) => {
-				string path;
-				if ( ( path = textures.GetOrAdd( id, ( id, name ) => $"./{name}.png", name ) ) == $"./{name}.png" ) {
+				if ( textures.TryAdd( id, $"./{name}.png" ) ) {
 					var tx = await load();
 					if ( tx != null ) {
 						await tx.SaveAsPngAsync( $"./{name}.png" );
@@ -133,6 +136,7 @@ vr.DeviceDetected += d => {
 					}
 				}
 				else {
+					textures.TryGetValue( id, out var path );
 					Log( $"{name} shares texture at `{path}`" );
 				}
 			}, onError: ( err, ctx ) => {
@@ -223,6 +227,17 @@ vr.DeviceDetected += d => {
 
 		c.Enabled += runTest;
 	}
+#else
+	vr.BindActionsLoaded( () => {
+		var boolean = vr.GetAction<BooleanAction>( Actions.Boolean )!;
+		boolean.ValueUpdated += v => Log( $"Boolean changed to {v}" );
+		var scalar = vr.GetAction<ScalarAction>( Actions.Scalar )!;
+		scalar.ValueUpdated += v => Log( $"Scalar changed to {v}" );
+		var vector2 = vr.GetAction<Vector2Action>( Actions.Vector2 )!;
+		vector2.ValueUpdated += v => Log( $"Vector2 changed to {v}" );
+		var vector3 = vr.GetAction<Vector3Action>( Actions.Vector3 )!;
+		vector3.ValueUpdated += v => Log( $"Vector3 changed to {v}" );
+	} );
 #endif
 };
 vr.Events.OnLog += ( msg, type, ctx ) => {
@@ -301,9 +316,28 @@ if ( vr.IsOpenVrRuntimeInstalled ) {
 
 	Log( $"OpenVR runtime version: `{vr.OpenVrRuntimeVersion}`" );
 
+#if LEGACY_INPUT
+	var actionManifestPath = null;
+#else
+	var actionManifestPath = vr.SetActionManifest( new ActionManifest<ActionSet, Actions> {
+		ActionSets = new() {
+			new() { Name = ActionSet.Main, Type = ActionSetType.LeftRight },
+			new() { Name = ActionSet.Aux, Type = ActionSetType.LeftRight }
+		},
+		Actions = new() {
+			new() { Category = ActionSet.Main, Name = Actions.Boolean, Type = ActionType.Boolean },
+			new() { Category = ActionSet.Main, Name = Actions.Scalar, Type = ActionType.Scalar },
+			new() { Category = ActionSet.Main, Name = Actions.Vector2, Type = ActionType.Vector2 },
+			new() { Category = ActionSet.Main, Name = Actions.Vector3, Type = ActionType.Vector3 },
+			new() { Category = ActionSet.Main, Name = Actions.Vibration, Type = ActionType.Vibration }
+		}
+	} );
+#endif
+
 	path = vr.InstallApp( new() {
 		AppKey = "OpenVR.NET.Tests",
 		WindowsPath = "Tests.exe",
+		ActionManifestPath = actionManifestPath,
 		LocalizedNames = new() {
 			["en_us"] = (
 				"OpenVR.NET Tests",

@@ -154,8 +154,8 @@ public class Controller : VrDevice {
 	}
 
 	Dictionary<Enum, Input.Action> actions = new();
-	/// <inheritdoc cref="VR.GetAction{T, Taction}(Taction, Controller?)"/>
-	public T? GetAction<T, Taction> ( Taction action ) where Taction : struct, Enum where T : Input.Action {
+	/// <inheritdoc cref="VR.GetAction{T}(Enum, Controller?)"/>
+	public T? GetAction<T> ( Enum action ) where T : Input.Action {
 		if ( !actions.TryGetValue( action, out var value ) ) {
 			var @params = VR.ActionFor( action );
 			actions.Add( action, @params.CreateAction( VR, this ) );

@@ -109,7 +109,7 @@ public class VR {
 		path = Path.Combine( Directory.GetCurrentDirectory(), path );
 		File.WriteAllText( path, json );
 
-		Valve.VR.OpenVR.Applications.RemoveApplicationManifest( path );
+		//Valve.VR.OpenVR.Applications.RemoveApplicationManifest( path );
 		var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( path, false );
 		if ( error != EVRApplicationError.None ) {
 			return null;
@@ -367,14 +367,16 @@ public class VR {
 	/// <summary>
 	/// Fetches an action defined in the action manifest
 	/// </summary>
-	public IAction ActionFor<T> ( T action ) where T : struct, Enum
+	public IAction ActionFor ( Enum action )
 		=> definedActions[action];
 	/// <summary>
-	/// Sets the action manifest. This method will throw if the manifest couldnt be set
+	/// Sets the action manifest. This method will throw if the manifest couldnt be set.
+	/// Returns the absolute path to the action manifest
 	/// </summary>
-	public void SetActionManifest ( IActionManifest manifest, string? path = null ) {
+	public string SetActionManifest ( IActionManifest manifest, string? path = null ) {
 		path ??= "ActionManifest.json";
-		File.AppendAllText( path, manifest.ToJson() );
+		path = Path.Combine( Directory.GetCurrentDirectory(), path );
+		File.WriteAllText( path, manifest.ToJson() );
 		var error = Valve.VR.OpenVR.Input.SetActionManifestPath( path );
 		if ( error != EVRInputError.None ) {
 			throw new Exception( $"Could not set action manifest: {error}" );
@@ -407,6 +409,8 @@ public class VR {
 			actionsLoaded?.Invoke();
 			actionsLoaded = null;
 		} );
+
+		return path;
 	}
 
 	public ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
@@ -418,7 +422,7 @@ public class VR {
 	/// </summary>
 	public void BindActionsLoaded ( Action action ) {
 		if ( actionManifest != null )
-			action();
+			inputScheduler.Enqueue( action );
 		else
 			actionsLoaded += action;
 	}
@@ -426,7 +430,8 @@ public class VR {
 
 	Dictionary<Enum, Input.Action> actions = new();
 	/// <summary>
-	/// Gets an action defined in the action manifest. This is safe to use on the input thread
+	/// Gets an action defined in the action manifest. This is safe to use on the input thread,
+	/// as well as with <see cref="BindActionsLoaded(Action)"/>, as it will be scheduled to execute on the input thread
 	/// </summary>
 	/// <typeparam name="T">
 	/// The action type, coresponding to the defined <see cref="ActionType"/>.
@@ -434,13 +439,13 @@ public class VR {
 	/// <see cref="Input.Vector2Action"/>, <see cref="Input.Vector3Action"/>, <see cref="Input.HapticAction"/>,
 	/// <see cref="Input.PoseAction"/> and <see cref="Input.HandSkeletonAction"/>
 	/// </typeparam>
-	public T? GetAction<T, Taction> ( Taction action, Controller? controller = null ) where Taction : struct, Enum where T : Input.Action {
+	public T? GetAction<T> ( Enum action, Controller? controller = null ) where T : Input.Action {
 		if ( controller != null )
-			return controller.GetAction<T, Taction>( action );
+			return controller.GetAction<T>( action );
 
 		if ( !actions.TryGetValue( action, out var value ) ) {
 			var @params = definedActions[action];
-			actions.Add( action, @params.CreateAction( this, controller ) );
+			actions.Add( action, value = @params.CreateAction( this, null ) );
 		}
 
 		return value as T;
