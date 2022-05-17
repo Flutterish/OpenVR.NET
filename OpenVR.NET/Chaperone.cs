@@ -29,7 +29,7 @@ public interface IChaperone {
 	/// </summary>
 	bool AreBoundsVisible { get; }
 	/// <summary>
-	/// Force the system to draw pllayfield bounds
+	/// Force the system to draw playfield bounds
 	/// </summary>
 	bool ForceBoundsVisible { get; set; }
 }
