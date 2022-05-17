@@ -2,13 +2,13 @@
 //
 // Purpose: This file contains C#/managed code bindings for the OpenVR interfaces
 // This file is auto-generated, do not edit it.
+// for documentation, look here https://github.com/ValveSoftware/openvr/blob/master/headers/openvr.h
 //
 //=============================================================================
 #nullable disable
 
 #if !OPENVR_XR_API
 
-using System;
 using System.Runtime.InteropServices;
 
 #if UNITY_5_3_OR_NEWER

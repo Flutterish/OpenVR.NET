@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenVR.NETv2\OpenVR.NETv2.csproj" />
+    <ProjectReference Include="..\OpenVR.NET\OpenVR.NET.csproj" />
   </ItemGroup>
 
 </Project>
