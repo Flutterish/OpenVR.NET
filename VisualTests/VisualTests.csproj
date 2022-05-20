@@ -10,6 +10,8 @@
   <ItemGroup>
     <None Remove="Resources\Shaders\basic.frag" />
     <None Remove="Resources\Shaders\basic.vert" />
+    <None Remove="Resources\Shaders\colored.frag" />
+    <None Remove="Resources\Shaders\colored.vert" />
     <None Remove="Resources\Textures\susie.png" />
   </ItemGroup>
 
