@@ -25,4 +25,19 @@ public class Shader {
 	public void Bind () {
 		GL.UseProgram( Handle );
 	}
+
+	public int GetAttrib ( string name )
+		=> GL.GetAttribLocation( Handle, name );
+
+	Dictionary<string, int> uniforms = new();
+	int uniformLocation ( string name ) {
+		if ( !uniforms.TryGetValue( name, out var loc ) )
+			uniforms.Add( name, loc = GL.GetUniformLocation( Handle, name ) );
+
+		return loc;
+	}
+
+	public void SetUniform ( string name, Color4 value ) {
+		GL.Uniform4( uniformLocation( name ), value );
+	}
 }

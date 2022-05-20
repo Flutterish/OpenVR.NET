@@ -13,24 +13,36 @@ internal class TestWindow : GameWindow {
 
 	Shader basicShader;
 
-	Vector3[] triangleData = null!;
-	GlHandle VBO;
+	Vector3[] shapeData = null!;
+	uint[] shapeIndices = null!;
 	GlHandle VAO;
+	GlHandle VBO;
+	GlHandle EBO;
 	protected override void OnLoad () {
 		base.OnLoad();
 
-		triangleData = new Vector3[] {
-			new( -0.5f, -0.5f, 0.0f ),
+		shapeData = new Vector3[] {
+			new(  0.5f,  0.5f, 0.0f ),
 			new(  0.5f, -0.5f, 0.0f ),
-			new(  0.0f,  0.5f, 0.0f )
+			new( -0.5f, -0.5f, 0.0f ),
+			new( -0.5f,  0.5f, 0.0f )
 		};
-		VBO = GL.GenBuffer();
-		GL.BindBuffer( BufferTarget.ArrayBuffer, VBO );
-		PositionVertex.Upload( triangleData, triangleData.Length );
+		shapeIndices = new uint[] {
+			0, 1, 3,
+			1, 2, 3
+		};
 
 		VAO = GL.GenVertexArray();
 		GL.BindVertexArray( VAO );
-		PositionVertex.Link( position: 0 );
+
+		VBO = GL.GenBuffer();
+		GL.BindBuffer( BufferTarget.ArrayBuffer, VBO );
+		PositionVertex.Upload( shapeData, shapeData.Length );
+		PositionVertex.Link( position: basicShader.GetAttrib( "aPos" ) );
+
+		EBO = GL.GenBuffer();
+		GL.BindBuffer( BufferTarget.ElementArrayBuffer, EBO );
+		Indices.Upload( shapeIndices, shapeIndices.Length );
 	}
 
 	float time;
@@ -44,8 +56,9 @@ internal class TestWindow : GameWindow {
 		GL.Clear( ClearBufferMask.ColorBufferBit );
 
 		basicShader.Bind();
+		basicShader.SetUniform( "color", new Color4( 0, MathF.Sin(time) / 2 + 0.5f, 0, 1 ) );
 		GL.BindVertexArray( VAO );
-		GL.DrawArrays( PrimitiveType.Triangles, 0, 3 );
+		GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
 
 		SwapBuffers();
 	}
