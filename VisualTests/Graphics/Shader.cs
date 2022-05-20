@@ -40,4 +40,8 @@ public class Shader {
 	public void SetUniform ( string name, Color4 value ) {
 		GL.Uniform4( uniformLocation( name ), value );
 	}
+
+	public void SetUniform ( string name, Matrix4 value ) {
+		GL.UniformMatrix4( uniformLocation( name ), true, ref value );
+	}
 }

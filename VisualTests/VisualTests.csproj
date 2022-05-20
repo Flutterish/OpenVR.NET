@@ -14,6 +14,8 @@
     <None Remove="Resources\Shaders\colored.vert" />
     <None Remove="Resources\Shaders\textured.frag" />
     <None Remove="Resources\Shaders\textured.vert" />
+    <None Remove="Resources\Shaders\unlit.frag" />
+    <None Remove="Resources\Shaders\unlit.vert" />
     <None Remove="Resources\Textures\susie.png" />
   </ItemGroup>
 

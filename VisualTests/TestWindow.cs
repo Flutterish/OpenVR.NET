@@ -11,6 +11,7 @@ internal class TestWindow : GameWindow {
 		basicShader = new( "Resources/Shaders/basic.vert", "Resources/Shaders/basic.frag" );
 		colorShader = new( "Resources/Shaders/colored.vert", "Resources/Shaders/colored.frag" );
 		textureShader = new( "Resources/Shaders/textured.vert", "Resources/Shaders/textured.frag" );
+		unlitShader = new( "Resources/Shaders/unlit.vert", "Resources/Shaders/unlit.frag" );
 		susie = new();
 		susie.Upload( "Resources/Textures/susie.png" );
 	}
@@ -18,7 +19,10 @@ internal class TestWindow : GameWindow {
 	Shader basicShader;
 	Shader colorShader;
 	Shader textureShader;
+	Shader unlitShader;
 	Texture susie;
+
+	Transform shapeTransform = new();
 
 	TexturedVertex[] shapeData = null!;
 	uint[] shapeIndices = null!;
@@ -45,7 +49,7 @@ internal class TestWindow : GameWindow {
 		VBO = GL.GenBuffer();
 		GL.BindBuffer( BufferTarget.ArrayBuffer, VBO );
 		TexturedVertex.Upload( shapeData, shapeData.Length );
-		TexturedVertex.Link( position: textureShader.GetAttrib( "aPos" ), uv: textureShader.GetAttrib( "aUv" ) );
+		TexturedVertex.Link( position: unlitShader.GetAttrib( "aPos" ), uv: unlitShader.GetAttrib( "aUv" ) );
 
 		EBO = GL.GenBuffer();
 		GL.BindBuffer( BufferTarget.ElementArrayBuffer, EBO );
@@ -62,11 +66,25 @@ internal class TestWindow : GameWindow {
 		GL.ClearColor( 0.2f, 0.3f, 0.3f, 1.0f );
 		GL.Clear( ClearBufferMask.ColorBufferBit );
 
-		textureShader.Bind();
+		unlitShader.Bind();
 		susie.Bind();
+		unlitShader.SetUniform( "transform", shapeTransform.Matrix );
+		unlitShader.SetUniform( "gProj", Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
+			MathF.PI / 2,
+			(float)Size.X / Size.Y,
+			0.01f,
+			1000f
+		) );
 		GL.BindVertexArray( VAO );
 		GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
 
 		SwapBuffers();
+	}
+
+	protected override void OnUpdateFrame ( FrameEventArgs args ) {
+		base.OnUpdateFrame( args );
+
+		shapeTransform.Position = new( 0, 0, 1 );
+		shapeTransform.Rotation *= Quaternion.FromAxisAngle( new Vector3( 1, 0.3f, MathF.Sin( (float)args.Time ) + 1 ).Normalized(), (float)args.Time );
 	}
 }
