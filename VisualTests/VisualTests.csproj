@@ -12,6 +12,8 @@
     <None Remove="Resources\Shaders\basic.vert" />
     <None Remove="Resources\Shaders\colored.frag" />
     <None Remove="Resources\Shaders\colored.vert" />
+    <None Remove="Resources\Shaders\textured.frag" />
+    <None Remove="Resources\Shaders\textured.vert" />
     <None Remove="Resources\Textures\susie.png" />
   </ItemGroup>
 
@@ -23,6 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="OpenTK" Version="4.7.2" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.1" />
   </ItemGroup>
 
 </Project>

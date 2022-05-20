@@ -10,12 +10,17 @@ internal class TestWindow : GameWindow {
 
 		basicShader = new( "Resources/Shaders/basic.vert", "Resources/Shaders/basic.frag" );
 		colorShader = new( "Resources/Shaders/colored.vert", "Resources/Shaders/colored.frag" );
+		textureShader = new( "Resources/Shaders/textured.vert", "Resources/Shaders/textured.frag" );
+		susie = new();
+		susie.Upload( "Resources/Textures/susie.png" );
 	}
 
 	Shader basicShader;
 	Shader colorShader;
+	Shader textureShader;
+	Texture susie;
 
-	ColoredVertex[] shapeData = null!;
+	TexturedVertex[] shapeData = null!;
 	uint[] shapeIndices = null!;
 	GlHandle VAO;
 	GlHandle VBO;
@@ -23,11 +28,11 @@ internal class TestWindow : GameWindow {
 	protected override void OnLoad () {
 		base.OnLoad();
 
-		shapeData = new ColoredVertex[] {
-			new() { Position = new(  0.5f,  0.5f, 0.0f ), Color = new( 1, 0, 0 ) },
-			new() { Position = new(  0.5f, -0.5f, 0.0f ), Color = new( 0, 1, 0 ) },
-			new() { Position = new( -0.5f, -0.5f, 0.0f ), Color = new( 0, 0, 1 ) },
-			new() { Position = new( -0.5f,  0.5f, 0.0f ), Color = new( 1, 0, 1 ) }
+		shapeData = new TexturedVertex[] {
+			new() { Position = new(  0.5f,  0.5f, 0.0f ), UV = new( 1, 1 ) },
+			new() { Position = new(  0.5f, -0.5f, 0.0f ), UV = new( 1, 0 ) },
+			new() { Position = new( -0.5f, -0.5f, 0.0f ), UV = new( 0, 0 ) },
+			new() { Position = new( -0.5f,  0.5f, 0.0f ), UV = new( 0, 1 ) }
 		};
 		shapeIndices = new uint[] {
 			0, 1, 3,
@@ -39,8 +44,8 @@ internal class TestWindow : GameWindow {
 
 		VBO = GL.GenBuffer();
 		GL.BindBuffer( BufferTarget.ArrayBuffer, VBO );
-		ColoredVertex.Upload( shapeData, shapeData.Length );
-		ColoredVertex.Link( position: colorShader.GetAttrib( "aPos" ), color: colorShader.GetAttrib( "aColor" ) );
+		TexturedVertex.Upload( shapeData, shapeData.Length );
+		TexturedVertex.Link( position: textureShader.GetAttrib( "aPos" ), uv: textureShader.GetAttrib( "aUv" ) );
 
 		EBO = GL.GenBuffer();
 		GL.BindBuffer( BufferTarget.ElementArrayBuffer, EBO );
@@ -57,7 +62,8 @@ internal class TestWindow : GameWindow {
 		GL.ClearColor( 0.2f, 0.3f, 0.3f, 1.0f );
 		GL.Clear( ClearBufferMask.ColorBufferBit );
 
-		colorShader.Bind();
+		textureShader.Bind();
+		susie.Bind();
 		GL.BindVertexArray( VAO );
 		GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
 
