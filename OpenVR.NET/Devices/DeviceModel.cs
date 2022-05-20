@@ -26,7 +26,8 @@ public class DeviceModel {
 	ComponentModel[]? components;
 	/// <summary>
 	/// Components that make up the device model. Please note that some of them might be empty objects
-	/// used as a reference point such as "tip" "grip" etc
+	/// used as a reference point such as "base", "tip" "grip"/"handgrip" etc (<see cref="ComponentModel.Name"/>).
+	/// There can also be a "status" panel (which Im not sure if youre supposed to render to yourself or if openvr provides a texture?)
 	/// </summary>
 	public IReadOnlyList<ComponentModel> Components {
 		get {
