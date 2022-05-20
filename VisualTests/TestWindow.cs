@@ -1,5 +1,6 @@
 ﻿using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
+using OpenTK.Windowing.GraphicsLibraryFramework;
 using VisualTests.Graphics;
 using VisualTests.Vetrices;
 
@@ -23,6 +24,7 @@ internal class TestWindow : GameWindow {
 	Texture susie;
 
 	Transform shapeTransform = new();
+	Transform cameraTransform = new();
 
 	TexturedVertex[] shapeData = null!;
 	uint[] shapeIndices = null!;
@@ -98,7 +100,7 @@ internal class TestWindow : GameWindow {
 		unlitShader.Bind();
 		susie.Bind();
 		//unlitShader.SetUniform( "transform", shapeTransform.Matrix );
-		unlitShader.SetUniform( "gProj", Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
+		unlitShader.SetUniform( "gProj", cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
 			MathF.PI / 2,
 			(float)Size.X / Size.Y,
 			0.01f,
@@ -133,5 +135,28 @@ internal class TestWindow : GameWindow {
 
 		shapeTransform.Position = new( 0, 0, 1.6f );
 		shapeTransform.Rotation *= Quaternion.FromAxisAngle( new Vector3( 1, 0.3f, MathF.Sin( (float)args.Time ) + 1 ).Normalized(), (float)args.Time );
+
+		var eulerX = Math.Clamp( MouseState.Y / Size.Y * 180 - 90, -89, 89 );
+		var eulerY = MouseState.X / Size.X * 720 + 360;
+
+		cameraTransform.Rotation = Quaternion.FromAxisAngle( Vector3.UnitY, eulerY * MathF.PI / 180 )
+			* Quaternion.FromAxisAngle( Vector3.UnitX, eulerX * MathF.PI / 180 );
+
+		Vector3 dir = Vector3.Zero;
+		if ( KeyboardState.IsKeyDown( Keys.D ) )
+			dir += cameraTransform.Right;
+		if ( KeyboardState.IsKeyDown( Keys.A ) )
+			dir -= cameraTransform.Right;
+		if ( KeyboardState.IsKeyDown( Keys.W ) )
+			dir += cameraTransform.Forward;
+		if ( KeyboardState.IsKeyDown( Keys.S ) )
+			dir -= cameraTransform.Forward;
+		if ( KeyboardState.IsKeyDown( Keys.Space ) )
+			dir += cameraTransform.Up;
+		if ( KeyboardState.IsKeyDown( Keys.LeftControl ) )
+			dir -= cameraTransform.Up;
+
+		if ( dir != Vector3.Zero )
+			cameraTransform.Position += dir.Normalized() * (float)args.Time;
 	}
 }
