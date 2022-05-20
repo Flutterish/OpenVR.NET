@@ -15,6 +15,13 @@ public class Texture {
 		Handle = GL.GenTexture();
 	}
 
+	public void Resize ( int width, int height ) {
+		GL.BindTexture( TextureTarget.Texture2D, Handle );
+		Width = width;
+		Height = height;
+		GL.TexImage2D( TextureTarget2d.Texture2D, 0, TextureComponentCount.Rgba, Width, Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero );
+	}
+
 	public void Upload ( string path ) {
 		GL.BindTexture( TextureTarget.Texture2D, Handle );
 		GL.TexParameter( TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge );

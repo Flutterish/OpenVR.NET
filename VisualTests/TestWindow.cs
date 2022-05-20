@@ -15,6 +15,8 @@ internal class TestWindow : GameWindow {
 		unlitShader = new( "Resources/Shaders/unlit.vert", "Resources/Shaders/unlit.frag" );
 		susie = new();
 		susie.Upload( "Resources/Textures/susie.png" );
+
+		framebuffer = new();
 	}
 
 	Shader basicShader;
@@ -23,14 +25,20 @@ internal class TestWindow : GameWindow {
 	Shader unlitShader;
 	Texture susie;
 
+	Framebuffer framebuffer;
+
 	Transform shapeTransform = new();
 	Transform cameraTransform = new();
 
 	TexturedVertex[] shapeData = null!;
-	uint[] shapeIndices = null!;
 	GlHandle VAO;
 	GlHandle VBO;
-	GlHandle EBO;
+
+	TexturedVertex[] blitData = null!;
+	uint[] blitIndices = null!;
+	GlHandle blitVAO;
+	GlHandle blitVBO;
+	GlHandle blitEBO;
 	protected override void OnLoad () {
 		base.OnLoad();
 
@@ -81,25 +89,41 @@ internal class TestWindow : GameWindow {
 		TexturedVertex.Upload( shapeData, shapeData.Length );
 		TexturedVertex.Link( position: unlitShader.GetAttrib( "aPos" ), uv: unlitShader.GetAttrib( "aUv" ) );
 
-		//EBO = GL.GenBuffer();
-		//GL.BindBuffer( BufferTarget.ElementArrayBuffer, EBO );
-		//Indices.Upload( shapeIndices, shapeIndices.Length );
+		blitData = new TexturedVertex[] {
+			new() { Position = new(  1,  1, 0 ), UV = new( 1, 1 ) },
+			new() { Position = new(  1, -1, 0 ), UV = new( 1, 0 ) },
+			new() { Position = new( -1, -1, 0 ), UV = new( 0, 0 ) },
+			new() { Position = new( -1,  1, 0 ), UV = new( 0, 1 ) }
+		};
+		blitIndices = new uint[] {
+			0, 1, 3,
+			1, 2, 3
+		};
+
+		blitVAO = GL.GenVertexArray();
+		GL.BindVertexArray( blitVAO );
+
+		blitVBO = GL.GenBuffer();
+		GL.BindBuffer( BufferTarget.ArrayBuffer, blitVBO );
+		TexturedVertex.Upload( blitData, blitData.Length );
+		TexturedVertex.Link( position: textureShader.GetAttrib( "aPos" ), uv: textureShader.GetAttrib( "aUv" ) );
+
+		blitEBO = GL.GenBuffer();
+		GL.BindBuffer( BufferTarget.ElementArrayBuffer, blitEBO );
+		Indices.Upload( blitIndices, blitIndices.Length );
 	}
 
-	float time;
 	protected override void OnRenderFrame ( FrameEventArgs args ) {
 		base.OnRenderFrame( args );
-		var deltaTime = (float)args.Time;
-		time += deltaTime;
 
-		GL.Viewport( 0, 0, Size.X, Size.Y );
+		framebuffer.Resize( Size.X, Size.Y );
+		framebuffer.Bind();
+		GL.Viewport( 0, 0, framebuffer.Width, framebuffer.Height );
 		GL.ClearColor( 0.2f, 0.3f, 0.3f, 1.0f );
 		GL.Enable( EnableCap.DepthTest );
 		GL.Clear( ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit );
-
 		unlitShader.Bind();
 		susie.Bind();
-		//unlitShader.SetUniform( "transform", shapeTransform.Matrix );
 		unlitShader.SetUniform( "gProj", cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
 			MathF.PI / 2,
 			(float)Size.X / Size.Y,
@@ -107,7 +131,6 @@ internal class TestWindow : GameWindow {
 			1000f
 		) );
 		GL.BindVertexArray( VAO );
-
 		var cubePositions = new Vector3[] {
 			new( 2.0f,  5.0f, 15.0f),
 			new(-1.5f, -2.2f, 2.5f),
@@ -124,8 +147,14 @@ internal class TestWindow : GameWindow {
 			unlitShader.SetUniform( "transform", shapeTransform.Matrix );
 			GL.DrawArrays( PrimitiveType.Triangles, 0, 36 );
 		}
-		//GL.DrawArrays( PrimitiveType.Triangles, 0, 36 );
-		//GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
+		framebuffer.Unbind();
+
+		GL.Viewport( 0, 0, Size.X, Size.Y );
+		GL.Disable( EnableCap.DepthTest );
+		textureShader.Bind();
+		framebuffer.Texture.Bind();
+		GL.BindVertexArray( blitVAO );
+		GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
 
 		SwapBuffers();
 	}
