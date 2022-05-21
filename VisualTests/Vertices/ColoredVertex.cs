@@ -1,4 +1,4 @@
-﻿namespace VisualTests.Vetrices;
+﻿namespace VisualTests.Vertices;
 
 public struct ColoredVertex {
 	public Vector3 Position;

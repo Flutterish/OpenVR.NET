@@ -1,4 +1,4 @@
-﻿namespace VisualTests.Vetrices;
+﻿namespace VisualTests.Vertices;
 
 public static class Indices {
 	public static void Upload ( uint[] indices, int length, BufferUsageHint usage = BufferUsageHint.StaticDraw ) {

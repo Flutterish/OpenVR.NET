@@ -100,7 +100,7 @@ public class ComponentModel {
 	/// otherwise it is your responsibility to dispose of any received disposable resources.
 	/// </summary>
 	public async Task LoadAsync (
-		Action? begin = null,
+		Action<ComponentType>? begin = null,
 		Action<ComponentType>? finish = null,
 		AddVertice? addVertice = null,
 		Action<short, short, short>? addTriangle = null,
@@ -110,7 +110,6 @@ public class ComponentModel {
 		var modelLock = modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
 		await modelLock.WaitAsync();
 
-		begin?.Invoke();
 		IntPtr modelPtr = IntPtr.Zero;
 		EVRRenderModelError error;
 		while ( ( error = Valve.VR.OpenVR.RenderModels.LoadRenderModel_Async( ModelName, ref modelPtr ) ) is EVRRenderModelError.Loading ) {
@@ -119,6 +118,7 @@ public class ComponentModel {
 
 		loadedModelPtr = modelPtr;
 		if ( error is EVRRenderModelError.None ) {
+			begin?.Invoke( ComponentType.Component );
 			RenderModel_t model = new();
 
 			if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
@@ -203,9 +203,11 @@ public class ComponentModel {
 			finish?.Invoke( ComponentType.Component );
 		}
 		else if ( error is EVRRenderModelError.InvalidArg ) {
+			begin?.Invoke( ComponentType.ReferencePoint );
 			finish?.Invoke( ComponentType.ReferencePoint );
 		}
 		else {
+			begin?.Invoke( ComponentType.Error );
 			onError?.Invoke( error, Context.Model );
 			finish?.Invoke( ComponentType.Error );
 		}

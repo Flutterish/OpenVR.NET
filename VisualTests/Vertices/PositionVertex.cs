@@ -1,4 +1,4 @@
-﻿namespace VisualTests.Vetrices;
+﻿namespace VisualTests.Vertices;
 
 public static class PositionVertex {
 	public static readonly int Stride = sizeof( float ) * 3;
