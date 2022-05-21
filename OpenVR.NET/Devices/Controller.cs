@@ -67,8 +67,8 @@ public class Controller : VrDevice {
 				comp.ScrollWheelVisible = state.bScrollWheelVisible;
 				comp.LocalPosition = ExtractPosition( ref cState.mTrackingToComponentLocal );
 				comp.LocalRotation = ExtractRotation( ref cState.mTrackingToComponentLocal );
-				comp.GlobalPosition = ExtractPosition( ref cState.mTrackingToComponentRenderModel );
-				comp.GlobalRotation = ExtractRotation( ref cState.mTrackingToComponentRenderModel );
+				comp.Position = ExtractPosition( ref cState.mTrackingToComponentRenderModel );
+				comp.Rotation = ExtractRotation( ref cState.mTrackingToComponentRenderModel );
 				comp.Properties = (EVRComponentProperty)cState.uProperties;
 				componentStates[i] = comp;
 			}
@@ -243,13 +243,25 @@ public class Controller : VrDevice {
 		/// </summary>
 		public bool ScrollWheelVisible;
 
+		/// <summary>
+		/// Position in self space
+		/// </summary>
 		public Vector3 LocalPosition;
+		/// <summary>
+		/// Rotation in self space
+		/// </summary>
 		public Quaternion LocalRotation;
-		public Vector3 GlobalPosition;
-		public Quaternion GlobalRotation;
+		/// <summary>
+		/// Position in device space
+		/// </summary>
+		public Vector3 Position;
+		/// <summary>
+		/// Rotation in device space
+		/// </summary>
+		public Quaternion Rotation;
 
 		/// <summary>
-		/// Additional prioperties as enum flags
+		/// Additional properties as enum flags
 		/// </summary>
 		public EVRComponentProperty Properties;
 	}

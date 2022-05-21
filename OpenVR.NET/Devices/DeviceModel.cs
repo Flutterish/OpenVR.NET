@@ -27,7 +27,8 @@ public class DeviceModel {
 	/// <summary>
 	/// Components that make up the device model. Please note that some of them might be empty objects
 	/// used as a reference point such as "base", "tip" "grip"/"handgrip" etc (<see cref="ComponentModel.Name"/>).
-	/// There can also be a "status" panel (which Im not sure if youre supposed to render to yourself or if openvr provides a texture?)
+	/// There can also be a "status" panel (which Im not sure if youre supposed to render to yourself or if openvr provides a texture?).
+	/// If the device is not a controller, this will return <see cref="JoinedModel"/>
 	/// </summary>
 	public IReadOnlyList<ComponentModel> Components {
 		get {
@@ -35,6 +36,10 @@ public class DeviceModel {
 				return this.components;
 
 			var count = Valve.VR.OpenVR.RenderModels.GetComponentCount( Name );
+			if ( count == 0 ) {
+				return this.components = new ComponentModel[] { JoinedModel };
+			}
+
 			var components = new ComponentModel[(int)count];
 			var sbLength = 256;
 			var sb = new StringBuilder( 256 );
@@ -73,7 +78,8 @@ public class ComponentModel {
 	/// Render model name
 	/// </summary>
 	public string ModelName { get; init; } = string.Empty;
-	static readonly ConcurrentDictionary<string, SemaphoreSlim> modelLoadLocks = new();
+	//static readonly ConcurrentDictionary<string, SemaphoreSlim> modelLoadLocks = new();
+	static readonly SemaphoreSlim loadLock = new(1,1);
 	static readonly ConcurrentDictionary<int, SemaphoreSlim> textureLoadLocks = new();
 	IntPtr? loadedModelPtr;
 	IntPtr? loadedTexturePtr;
@@ -81,7 +87,8 @@ public class ComponentModel {
 
 	public delegate void AddVertice ( Vector3 position, Vector3 normal, Vector2 uv );
 	/// <param name="id">A unique ID that represents the texture. You can cache textures with this key to prevent loading them again</param>
-	public delegate void AddTexture ( int id, Func<Task<Image<Rgba32>?>> load );
+	public delegate void AddTexture ( int id, ImageLoader load );
+	public delegate Task<Image<Rgba32>?> ImageLoader ( bool flipVertically = false );
 
 	public enum Context {
 		Model,
@@ -91,7 +98,8 @@ public class ComponentModel {
 	public enum ComponentType {
 		Error,
 		Component,
-		ReferencePoint
+		ReferencePoint,
+		Status
 	}
 
 	/// <summary>
@@ -100,14 +108,15 @@ public class ComponentModel {
 	/// otherwise it is your responsibility to dispose of any received disposable resources.
 	/// </summary>
 	public async Task LoadAsync (
-		Action<ComponentType>? begin = null,
+		Func<ComponentType, bool>? begin = null,
 		Action<ComponentType>? finish = null,
 		AddVertice? addVertice = null,
 		Action<short, short, short>? addTriangle = null,
 		AddTexture? addTexture = null,
 		Action<EVRRenderModelError, Context>? onError = null ) {
 
-		var modelLock = modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
+		// TODO idk. for some reason loading more than one sometimes leads to some of them missing
+		var modelLock = loadLock;// modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
 		await modelLock.WaitAsync();
 
 		IntPtr modelPtr = IntPtr.Zero;
@@ -118,7 +127,12 @@ public class ComponentModel {
 
 		loadedModelPtr = modelPtr;
 		if ( error is EVRRenderModelError.None ) {
-			begin?.Invoke( ComponentType.Component );
+			var type = Name == Valve.VR.OpenVR.k_pch_Controller_Component_Status ? ComponentType.Status : ComponentType.Component;
+			if ( begin?.Invoke( type ) == false ) {
+				modelLock.Release();
+				return;
+			}
+
 			RenderModel_t model = new();
 
 			if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
@@ -154,7 +168,7 @@ public class ComponentModel {
 			}
 
 			if ( addTexture != null && model.diffuseTextureId >= 0 ) {
-				addTexture( model.diffuseTextureId, async () => {
+				addTexture( model.diffuseTextureId, async flipVertically => {
 					var textureLock = textureLoadLocks.GetOrAdd( model.diffuseTextureId, _ => new( 1, 1 ) );
 					await textureLock.WaitAsync();
 
@@ -181,8 +195,9 @@ public class ComponentModel {
 
 						image.ProcessPixelRows( rows => {
 							int i = 0;
+							var stride = texture.unWidth * 4;
 							for ( int y = 0; y < texture.unHeight; y++ ) {
-								var span = rows.GetRowSpan( y );
+								var span = rows.GetRowSpan( flipVertically ? ( texture.unHeight - y - 1 ) : y );
 								for ( int x = 0; x < texture.unWidth; x++ ) {
 									span[x] = new( data[i++], data[i++], data[i++], data[i++] );
 								}
@@ -200,14 +215,22 @@ public class ComponentModel {
 				} );
 			}
 
-			finish?.Invoke( ComponentType.Component );
+			finish?.Invoke( type );
 		}
 		else if ( error is EVRRenderModelError.InvalidArg ) {
-			begin?.Invoke( ComponentType.ReferencePoint );
+			if ( begin?.Invoke( ComponentType.ReferencePoint ) == false ) {
+				modelLock.Release();
+				return;
+			}
+
 			finish?.Invoke( ComponentType.ReferencePoint );
 		}
 		else {
-			begin?.Invoke( ComponentType.Error );
+			if ( begin?.Invoke( ComponentType.Error ) == false ) {
+				modelLock.Release();
+				return;
+			}
+
 			onError?.Invoke( error, Context.Model );
 			finish?.Invoke( ComponentType.Error );
 		}

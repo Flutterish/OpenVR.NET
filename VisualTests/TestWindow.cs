@@ -3,7 +3,6 @@ using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using OpenVR.NET;
 using OpenVR.NET.Devices;
-using SixLabors.ImageSharp.Processing;
 using System.Collections.Concurrent;
 using VisualTests.Graphics;
 using VisualTests.Scene;
@@ -45,21 +44,17 @@ internal class TestWindow : GameWindow {
 	}
 
 	private void onVrDeviceDetected ( VrDevice device ) {
-		var controller = device as Controller;
-		if ( controller is null )
-			return;
-
 		var model = device.Model;
 		if ( model is null )
 			return;
 
-		foreach ( var i in model.Components ) {
+		void load ( ComponentModel i ) {
 			Mesh<TexturedVertex> mesh = null!;
 			Texture? texture = null;
 			_ = i.LoadAsync(
 				begin: type => {
 					if ( type != ComponentModel.ComponentType.Component )
-						return;
+						return false;
 
 					mesh = new( v => TexturedVertex.Upload( v, v.Length ) );
 					drawScheduler.Enqueue( () => {
@@ -68,25 +63,26 @@ internal class TestWindow : GameWindow {
 							uv: unlitShader.GetAttrib( "aUv" )
 						) );
 					} );
+
+					return true;
 				},
-				addVertice: (pos, norm, uv) => {
+				addVertice: ( pos, norm, uv ) => {
 					mesh.Vertices.Add( new() {
 						Position = new( pos.X, pos.Y, pos.Z ),
 						UV = new( uv.X, uv.Y )
 					} );
 				},
-				addTriangle: (a, b, c) => {
+				addTriangle: ( a, b, c ) => {
 					mesh.Indices.Add( (uint)a );
 					mesh.Indices.Add( (uint)b );
 					mesh.Indices.Add( (uint)c );
 				},
-				addTexture: (id, create) => {
+				addTexture: ( id, create ) => {
 					drawScheduler.Enqueue( () => {
 						texture = textures.GetOrAdd( id, id => {
-							var image = create();
+							var image = create( flipVertically: true );
 							var tx = new Texture();
 							image.ContinueWith( r => {
-								r.Result!.Mutate( x => x.Flip( FlipMode.Vertical ) );
 								drawScheduler.Enqueue( () => tx.Upload( r.Result! ) );
 							} );
 							return tx;
@@ -94,15 +90,16 @@ internal class TestWindow : GameWindow {
 					} );
 				},
 				finish: type => {
-					if ( type != ComponentModel.ComponentType.Component )
-						return;
-
 					drawScheduler.Enqueue( () => {
 						mesh.Upload();
-						models.Add( new( controller, i, mesh ) { Texture = texture } );
+						models.Add( new( device, i, mesh ) { Texture = texture } );
 					} );
 				}
 			);
+		}
+
+		foreach ( var i in model.Components ) {
+			load( i );
 		}
 	}
 
