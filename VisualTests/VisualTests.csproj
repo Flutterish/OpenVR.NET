@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\Shaders\basic.frag" />
+    <None Remove="Resources\Shaders\basic.vert" />
+    <None Remove="Resources\Shaders\colored.frag" />
+    <None Remove="Resources\Shaders\colored.vert" />
+    <None Remove="Resources\Shaders\textured.frag" />
+    <None Remove="Resources\Shaders\textured.vert" />
+    <None Remove="Resources\Shaders\unlit.frag" />
+    <None Remove="Resources\Shaders\unlit.vert" />
+    <None Remove="Resources\Textures\susie.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Resources\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTK" Version="4.7.2" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVR.NET\OpenVR.NET.csproj" />
+    <ProjectReference Include="..\Tests\Tests.csproj" />
+  </ItemGroup>
+
+</Project>

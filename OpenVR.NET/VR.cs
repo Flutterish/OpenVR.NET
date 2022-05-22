@@ -1,346 +1,453 @@
-﻿using OpenVR.NET.Manifests;
-using System;
-using System.Collections.Generic;
+﻿using OpenVR.NET.Devices;
+using OpenVR.NET.Manifest;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
-using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Valve.VR;
+using static OpenVR.NET.Extensions;
 
-namespace OpenVR.NET {
-	// NOTE: further development can be researched here: https://github.com/ValveSoftware/steamvr_unity_plugin/blob/master/Assets/SteamVR/Scripts
-	public static class VR {
-		// NOTE platform specific binaries for openVR are there: https://github.com/ValveSoftware/openvr/tree/master/bin
-		private static VrState vrState = VrState.NotInitialized;
-		public static VrState VrState { 
-			get => vrState; 
-			private set {
-				if ( vrState == value ) return;
+namespace OpenVR.NET;
 
-				vrState = value;
-				VrStateChanged?.Invoke( value );
+/// <summary>
+/// A multithreaded, object oriented wrapper around OpenVR.
+/// Left handed coordinate system - Y is up, X is right, Z is forward.
+/// </summary>
+public class VR {
+	public VrState State { get; private set; } = VrState.NotInitialized;
+	public readonly VrEvents Events = new();
+	Chaperone? chaperone;
+	/// <inheritdoc cref="IChaperone"/>
+	public IChaperone Chaperone => chaperone ??= new( this );
+
+	private object[]? interfaces; // this is used to prevent a race condition while initializing openvr interfaces on other threads
+	/// <summary>
+	/// Tries to initialize OpenVR.
+	/// This call is blocking and might take several seconds to complete.
+	/// You should call this on a separate woker thread in order not to block other threads
+	/// </summary>
+	public bool TryStart ( EVRApplicationType appType = EVRApplicationType.VRApplication_Scene ) {
+		if ( State.HasFlag( VrState.NotInitialized ) ) {
+			EVRInitError error = EVRInitError.None;
+			CVR = Valve.VR.OpenVR.Init( ref error, appType );
+			if ( error is EVRInitError.None ) {
+				interfaces = new object[] {
+					Valve.VR.OpenVR.Applications,
+					Valve.VR.OpenVR.Chaperone,
+					Valve.VR.OpenVR.ChaperoneSetup,
+					Valve.VR.OpenVR.Compositor,
+					Valve.VR.OpenVR.Debug,
+					Valve.VR.OpenVR.ExtendedDisplay,
+					Valve.VR.OpenVR.HeadsetView,
+					Valve.VR.OpenVR.Input,
+					Valve.VR.OpenVR.IOBuffer,
+					Valve.VR.OpenVR.Notifications,
+					Valve.VR.OpenVR.Overlay,
+					Valve.VR.OpenVR.OverlayView,
+					Valve.VR.OpenVR.RenderModels,
+					Valve.VR.OpenVR.Screenshots,
+					Valve.VR.OpenVR.Settings,
+					Valve.VR.OpenVR.SpatialAnchors,
+					Valve.VR.OpenVR.System,
+					Valve.VR.OpenVR.TrackedCamera
+				};
+				State = VrState.OK;
+				drawContext = new( this );
+				Events.Log( "OpenVR initialized succesfuly", EventType.InitializationSuccess, VrState.OK );
+			}
+			else {
+				Events.Log( $"OpenVR could not be initialized", EventType.InitializationError, error );
+				return false;
 			}
 		}
-		public static event System.Action<VrState>? VrStateChanged;
-		public static void BindVrStateChanged ( System.Action<VrState> action, bool runOnceImmediately = false ) {
-			VrStateChanged += action;
-			if ( runOnceImmediately ) action( vrState );
+
+		return true;
+	}
+
+	/// <summary>
+	/// Exits VR. You need to make sure <see cref="UpdateDraw"/>, <see cref="UpdateInput"/> nor <see cref="Update"/> are running
+	/// and you're not loading any models before making this call. Please be aware that if you do not terminate the running process,
+	/// the user will not return to the home scene, but will be left in the vr limbo until they launch another program (it will not terminate yours)
+	/// </summary>
+	public void Exit () {
+		interfaces = null;
+		CVR = null!;
+		Valve.VR.OpenVR.Shutdown();
+	}
+
+	/// <summary>
+	/// When the <see cref="EVREventType.VREvent_Quit"/> event is received, call this to extend time
+	/// before OpenVR termintes the process
+	/// </summary>
+	public void GracefullyExit () {
+		CVR.AcknowledgeQuit_Exiting();
+	}
+
+	/// <summary>
+	/// Installs the app/updates the vrmanifest file. If a path is provided,
+	/// the .vrmanifest file will be saved there, otherwise it will be saved to the current directory.
+	/// Returns the absolute path to the .vrmanifest file, or <see langword="null"/> if the installation failed.
+	/// This has to be called after initializing vr.
+	/// Note that updating the manifest might require a restart of OpenVR Runtime or the OS, as some values, such as images might be cached
+	/// </summary>
+	public string? InstallApp ( VrManifest manifest, string? path = null ) {
+		var json = JsonSerializer.Serialize( new {
+			source = "builtin",
+			applications = new VrManifest[] { manifest }
+		}, new JsonSerializerOptions {
+			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+			WriteIndented = true,
+			IncludeFields = true
+		} );
+
+		if ( path is null )
+			path = ".vrmanifest";
+		else if ( !path.EndsWith( ".vrmanifest" ) )
+			path += ".vrmanifest";
+
+		path = Path.Combine( Directory.GetCurrentDirectory(), path );
+		File.WriteAllText( path, json );
+
+		//Valve.VR.OpenVR.Applications.RemoveApplicationManifest( path );
+		var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( path, false );
+		if ( error != EVRApplicationError.None ) {
+			return null;
 		}
 
-		[MaybeNull, NotNull, AllowNull]
-		public static CVRSystem CVRSystem { get; private set; }
-		public static Vector2 RenderSize { get; private set; }
+		return path;
+	}
 
-		private static double lastInitializationAttempt;
-		private static double initializationAttemptInterval = 5000;
-		public static readonly VrInput Current = new();
-		/// <summary>
-		/// Initializes and draws to the headset. Should be called on the draw thread. Blocks to synchronize with headset refresh rate.
-		/// </summary>
-		/// <param name="timeMS">Timestamp in milliseconds</param>
-		public static void UpdateDraw ( double timeMS ) { // TODO make sure events are called on update thread
-			lastTime = now;
-			now = timeMS;
+	/// <summary>
+	/// Removes a .vrmanifest file from OpenVR, effectively uninstalling the app from it.
+	/// You should use this when updating the vrmanifests location.
+	/// This has to be called after initializing vr.
+	/// </summary>
+	public bool UninstallApp ( string vrmanifestPath ) {
+		var error = Valve.VR.OpenVR.Applications.RemoveApplicationManifest( vrmanifestPath );
+		return error is EVRApplicationError.None;
+	}
 
-			if ( VrState.HasFlag( VrState.NotInitialized ) && timeMS >= lastInitializationAttempt + initializationAttemptInterval ) {
-				lastInitializationAttempt = timeMS;
-				EVRInitError error = EVRInitError.None;
-				CVRSystem = Valve.VR.OpenVR.Init( ref error );
-				if ( error == EVRInitError.None ) {
-					VrState = VrState.OK;
-					Events.Log( "OpenVR initialzed succesfuly" );
-					InitializeOpenVR();
+	#region Draw Thread
+	DrawContext drawContext = null!;
+	/// <summary>
+	/// Returns the openvr CVR System, if initialized.
+	/// This is useful for implementing not yet available features of OpenVR.NET.
+	/// If you find yourself using unimplemented features, please open an issue
+	/// </summary>
+	public CVRSystem CVR { get; private set; } = null!;
+
+	/// <summary>
+	/// Allows drawing to the headset. Should be called on the draw thread. 
+	/// Might block to synchronize with headset refresh rate, depending on headset drivers.
+	/// It will also update the player pose, so eyes are positioned correctly.
+	/// While not critical, you might want to want to synchronise this pose update with the update thread.
+	/// Will return <see langword="null"/> until initialized.
+	/// </summary>
+	public IVRDrawContext? UpdateDraw ( ETrackingUniverseOrigin origin = ETrackingUniverseOrigin.TrackingUniverseStanding ) {
+		if ( State.HasFlag( VrState.OK ) ) {
+			pollPoses( origin );
+			return drawContext;
+		}
+		else return null;
+	}
+
+	bool hasFocus = true;
+	public ETrackingUniverseOrigin TrackingOrigin { get; private set; } = (ETrackingUniverseOrigin)( -1 );
+	TrackedDevicePose_t[] renderPoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
+	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
+	Dictionary<int, (VrDevice device, VrDevice.Owner owner)> trackedDeviceOwners = new();
+	HashSet<VrDevice> activeDevices = new();
+	// although in theory this should be on the update thread,
+	// this updates once per draw frame and is required to be called to allow for drawing
+	void pollPoses ( ETrackingUniverseOrigin origin ) {
+		if ( origin != TrackingOrigin ) {
+			TrackingOrigin = origin;
+			Valve.VR.OpenVR.Compositor.SetTrackingSpace( origin );
+		}
+
+		var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( renderPoses, gamePoses );
+		if ( error is EVRCompositorError.DoNotHaveFocus ) {
+			if ( hasFocus ) {
+				hasFocus = false;
+				Events.Log( $"Player pose could not be retreived", EventType.NoFous, error );
+			}
+		}
+		else if ( error != EVRCompositorError.None ) {
+			Events.Log( $"Player pose could not be retreived", EventType.CoundntFetchPlayerPose, error );
+			return;
+		}
+		hasFocus = true;
+
+		for ( int i = 0; i < renderPoses.Length; i++ ) {
+			var type = CVR.GetTrackedDeviceClass( (uint)i );
+			if ( type is ETrackedDeviceClass.Invalid )
+				continue;
+
+			ref var pose = ref renderPoses[i];
+
+			VrDevice device;
+			VrDevice.Owner owner;
+			if ( !trackedDeviceOwners.TryGetValue( i, out var data ) ) {
+				device = type switch {
+					ETrackedDeviceClass.HMD => new Headset( this, i, out owner ),
+					ETrackedDeviceClass.Controller => new Controller( this, i, out owner ),
+					ETrackedDeviceClass.GenericTracker => new Tracker( this, i, out owner ),
+					ETrackedDeviceClass.TrackingReference => new TrackingReference( this, i, out owner ),
+					ETrackedDeviceClass.DisplayRedirect => new DisplayRedirect( this, i, out owner ),
+					_ => new VrDevice( this, i, out owner )
+				};
+
+				trackedDeviceOwners.Add( i, (device, owner) );
+				updateScheduler.Enqueue( () => {
+					trackedDevices.Add( device );
+					DeviceDetected?.Invoke( device );
+				} );
+			}
+			else {
+				(device, owner) = data;
+			}
+
+			if ( pose.bDeviceIsConnected ) {
+				if ( !activeDevices.Contains( device ) ) {
+					activeDevices.Add( device );
+					if ( device is Controller controller ) {
+						inputScheduler.Enqueue( () => {
+							updateableInputDevices.Add( controller );
+						} );
+					}
+					updateScheduler.Enqueue( () => {
+						owner.IsEnabled = true;
+					} );
 				}
-				else {
-					Events.Error( $"OpenVR could not be initialized: {error.GetReadableDescription()}" );
+			}
+			else {
+				if ( activeDevices.Contains( device ) ) {
+					activeDevices.Remove( device );
+					if ( device is Controller controller ) {
+						inputScheduler.Enqueue( () => {
+							updateableInputDevices.Remove( controller );
+							controller.OnTurnedOff();
+						} );
+					}
+					updateScheduler.Enqueue( () => {
+						owner.IsEnabled = false;
+					} );
 				}
 			}
 
-			if ( VrState.HasFlag( VrState.OK ) ) {
-				// TODO check if rig is still alive
-				ReadVrPoses();
+			if ( pose.bPoseIsValid ) {
+				owner.RenderPosition = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
+				owner.RenderRotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
+				pose = ref gamePoses[i];
+				owner.Position = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
+				owner.Rotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
+				owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
+				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, -pose.vAngularVelocity.v2 );
+			}
+
+			if ( pose.eTrackingResult != owner.offThreadTrackingState ) {
+				var state = pose.eTrackingResult;
+				owner.offThreadTrackingState = state;
+				updateScheduler.Enqueue( () => {
+					owner.TrackingState = state;
+				} );
 			}
 		}
+	}
+	#endregion
+	#region Input Thread
+	ConcurrentQueue<Action> inputScheduler = new();
+	HashSet<Controller> updateableInputDevices = new();
 
-		private static double lastTime;
-		private static double now;
-		/// <summary>
-		/// How much time has passed since last draw frame.
-		/// </summary>
-		public static double DeltaTime => (now - lastTime)/1000;
-		public static ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
-		static void InitializeOpenVR () {
-			// TODO log/explain startup errors https://github.com/ValveSoftware/openvr/wiki/API-Documentation
-			uint w = 0, h = 0;
-			CVRSystem.GetRecommendedRenderTargetSize( ref w, ref h );
-			RenderSize = new Vector2( w, h );
-
-			if ( ActionManifest is not null ) setManifest( ActionManifest );
+	/// <summary>
+	/// Updates inputs. Should be called on the input or update thread.
+	/// </summary>
+	public void UpdateInput () {
+		while ( inputScheduler.TryDequeue( out var action ) ) {
+			action();
 		}
 
-		private static readonly TrackedDevicePose_t[] trackedRenderDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
-		private static readonly TrackedDevicePose_t[] trackedGameDevices = new TrackedDevicePose_t[ Valve.VR.OpenVR.k_unMaxTrackedDeviceCount ];
-		static void ReadVrPoses () {
-			// this blocks on the draw thread but it needs to be there ( it limits fps to headset framerate so its fine )
-			var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( trackedRenderDevices, trackedGameDevices );
-			if ( error != EVRCompositorError.None ) {
-				Events.Error( $"Pose error: {error}" );
+		if ( !State.HasFlag( VrState.OK ) )
+			return;
+
+		if ( actionSets != null ) {
+			var error = Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
+			if ( error != EVRInputError.None ) {
+				Events.Log( "Could not read input state", EventType.CouldntGetInput, error );
 				return;
 			}
 
-			for ( int i = 0; i < trackedRenderDevices.Length + trackedGameDevices.Length; i++ ) {
-				int index = i < trackedRenderDevices.Length ? i : ( i - trackedRenderDevices.Length );
-				var device = i < trackedRenderDevices.Length ? trackedRenderDevices[ index ] : trackedGameDevices[ index ];
-				if ( device.bPoseIsValid && device.bDeviceIsConnected ) {
-					switch ( Valve.VR.OpenVR.System.GetTrackedDeviceClass( (uint)i ) ) {
-						case ETrackedDeviceClass.HMD:
-							Current.Headset.Position = device.mDeviceToAbsoluteTracking.ExtractPosition();
-							Current.Headset.Rotation = device.mDeviceToAbsoluteTracking.ExtractRotation();
-							break;
-
-						case ETrackedDeviceClass.Controller:
-							if ( !Current.Controllers.ContainsKey( i ) ) {
-								var error2 = ETrackedPropertyError.TrackedProp_Success;
-								var roleID = Valve.VR.OpenVR.System.GetInt32TrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_ControllerRoleHint_Int32, ref error2 );
-
-								var role = (ETrackedControllerRole)roleID;
-								ulong handle = 0;
-								Valve.VR.OpenVR.Input.GetInputSourceHandle( role == ETrackedControllerRole.LeftHand ? Valve.VR.OpenVR.k_pchPathUserHandLeft : Valve.VR.OpenVR.k_pchPathUserHandRight, ref handle );
-								var controller = new Controller() {
-									DeviceIndex = (uint)i,
-									Role = role,
-									IsMainController = role == DominantHand,
-									Handle = handle
-								};
-								controller.BindEnabled( () => EnabledControllerCount++, true );
-								controller.BindDisabled( () => EnabledControllerCount-- );
-								Current.Controllers.Add( i, controller );
-								NewControllerAdded?.Invoke( controller );
-							}
-							Current.Controllers[ i ].Position = device.mDeviceToAbsoluteTracking.ExtractPosition();
-							Current.Controllers[ i ].Rotation = device.mDeviceToAbsoluteTracking.ExtractRotation();
-							Current.Controllers[ i ].IsEnabled = device.bDeviceIsConnected;
-							break;
-					}
-				}
-				else if ( i == index ) {
-					if ( Current.Controllers.ContainsKey( i ) ) {
-						Current.Controllers[ i ].IsEnabled = false;
-					}
-				}
-			}
-		}
-		public static Controller? ControllerForOrigin ( ulong origin ) {
-			InputOriginInfo_t info = default;
-			Valve.VR.OpenVR.Input.GetOriginTrackedDeviceInfo( origin, ref info, (uint)Marshal.SizeOf<InputOriginInfo_t>() );
-			return Current.Controllers.TryGetValue( (int)info.trackedDeviceIndex, out var c ) ? c : null;
-		}
-		/// <summary>
-		/// The main controller or if not present, a fallback one
-		/// </summary>
-		public static Controller? MainController => Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled && x.IsMainController ) ?? Current.Controllers.Values.FirstOrDefault( x => x.IsEnabled );
-		public static Controller? SecondaryController {
-			get {
-				var main = MainController;
-				return Current.Controllers.Values.FirstOrDefault( x => x!= main && x.IsEnabled );
-			}
-		}
-		public static Controller? LeftController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.LeftHand );
-		public static Controller? RightController => Current.Controllers.Values.FirstOrDefault( x => x.Role == ETrackedControllerRole.RightHand );
-		public static int EnabledControllerCount { get; private set; }
-		public static event System.Action<Controller>? NewControllerAdded;
-		public static void BindNewControllerAdded ( System.Action<Controller> action, bool runOnExisting = false ) {
-			NewControllerAdded += action;
-			if ( runOnExisting ) {
-				foreach ( var i in Current.Controllers ) {
-					action( i.Value );
-				}
+			foreach ( var i in actions.Values ) {
+				i.Update();
 			}
 		}
 
-		/// <summary>
-		/// Updates inputs and polls events. Should be called on the input or update thread.
-		/// </summary>
-		public static void Update () {
-			if ( !VrState.HasFlag( VrState.OK ) ) return;
-			if ( ActionManifest is null || !AreComponentsLoaded ) return;
-
-			var vrEvents = new List<VREvent_t>();
-			var vrEvent = new VREvent_t();
-			try {
-				while ( Valve.VR.OpenVR.System.PollNextEvent( ref vrEvent, (uint)Marshal.SizeOf<VREvent_t>() ) ) {
-					vrEvents.Add( vrEvent );
-				}
-			}
-			catch ( Exception e ) {
-				Events.Exception( e, "Could not get events" );
-			}
-
-			// Printing events
-			foreach ( var e in vrEvents ) {
-				var pid = e.data.process.pid;
-				if ( (EVREventType)vrEvent.eventType != EVREventType.VREvent_None ) {
-					var name = Enum.GetName( typeof( EVREventType ), e.eventType );
-					var message = $"[{pid}] {name}";
-					if ( pid == 0 ) Events.Log( message );
-					else if ( name == null ) Events.Log( message );
-					else if ( name.ToLower().Contains( "fail" ) )
-						Events.Error( message );
-					else if ( name.ToLower().Contains( "error" ) )
-						Events.Error( message );
-					else if ( name.ToLower().Contains( "success" ) )
-						Events.Log( message );
-					else Events.Log( message );
-				}
-			}
-
-			Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
-			lock ( componentLock ) {
-				foreach ( var i in components ) {
-					foreach ( var k in i.Value ) {
-						k.Value.Update();
-					}
-				}
-			}
+		foreach ( var i in updateableInputDevices ) {
+			i.UpdateInput();
 		}
-		private static object componentLock = new { };
+	}
+	#endregion
+	#region Update Thread
+	ConcurrentQueue<Action> updateScheduler = new();
+	bool isPasued = false;
 
-		public static void Exit () {
-			if ( CVRSystem is not null ) {
-				Valve.VR.OpenVR.Shutdown();
-				CVRSystem = null;
+	/// <summary>
+	/// Invokes the update thread related events and polls vr events.
+	/// </summary>
+	public void Update () {
+		while ( updateScheduler.TryDequeue( out var action ) ) {
+			action();
+		}
+
+		if ( !State.HasFlag( VrState.OK ) )
+			return;
+
+		if ( Events.AnyOnOpenVrEventHandlers ) {
+			VREvent_t e = default;
+			while ( CVR.PollNextEvent( ref e, (uint)Marshal.SizeOf<VREvent_t>() ) ) {
+				var type = (EVREventType)e.eventType;
+				var device = trackedDevices.FirstOrDefault( x => x.DeviceIndex == e.trackedDeviceIndex );
+				var age = e.eventAgeSeconds;
+				var data = e.data;
+
+				Events.Event( type, device, age, data );
 			}
 		}
 
-		public static Manifest? ActionManifest { get; private set; }
-		public static void SetManifest ( Manifest manifest ) {
-			if ( ActionManifest is not null ) {
-				throw new InvalidOperationException( $"{nameof(ActionManifest)} is already declared." );
-			}
-			ActionManifest = manifest;
-			if ( VrState.HasFlag( VrState.OK ) ) setManifest( ActionManifest );
+		if ( CVR.ShouldApplicationPause() != isPasued ) {
+			isPasued = !isPasued;
+			if ( isPasued )
+				UserDistracted?.Invoke();
+			else
+				UserFocused?.Invoke();
 		}
 
-		public const string ACTION_MANIFEST_NAME = "openVR_action_manifest.json";
-		public const string VR_MANIFEST_NAME = "openVR_vrmanifest.vrmanifest";
-		public static bool AreComponentsLoaded { get; private set; }
-		static Controller nullController = new();
-		static Dictionary<object, Dictionary<Controller, ControllerComponent>> components = new();
-		static VRActiveActionSet_t[] actionSets = Array.Empty<VRActiveActionSet_t>();
-		static void setManifest ( Manifest manifest ) {
-			var raw = RawManifest.Parse( manifest );
-			var actionManifestPath = Path.Combine( Directory.GetCurrentDirectory(), ACTION_MANIFEST_NAME );
-			File.WriteAllText( actionManifestPath, System.Text.Json.JsonSerializer.Serialize( raw.actionManifest, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true } ) );
-			var vrManifestPath = Path.Combine( Directory.GetCurrentDirectory(), VR_MANIFEST_NAME );
-			File.WriteAllText( vrManifestPath, System.Text.Json.JsonSerializer.Serialize( raw.vrManifest, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true } ) );
-			var error = Valve.VR.OpenVR.Applications.AddApplicationManifest( vrManifestPath, true );
-			if ( error != EVRApplicationError.None ) {
-				Events.Error($"Couldn't set application vr manifest: {error}" );
-			}
-			var error2 = Valve.VR.OpenVR.Input.SetActionManifestPath( actionManifestPath );
-			if ( error2 != EVRInputError.None ) {
-				Events.Error( $"Couldn't set application action manifest: {error2}" );
-			}
-
-			foreach ( var group in manifest.EnumerateGroups() ) {
-				foreach ( var action in group.EnumerateActions() ) {
-					ulong handle = 0;
-					Valve.VR.OpenVR.Input.GetActionHandle( action.FullPath, ref handle );
-					var comp = action.CreateComponent( handle );
-					components.Add( comp.Name, new() { [ nullController ] = comp } );
-				}
-			}
-
-			actionSets = manifest.EnumerateGroups().Select( x => {
-				ulong handle = 0;
-				var error = Valve.VR.OpenVR.Input.GetActionSetHandle( x.FullPath, ref handle );
-				if ( error != EVRInputError.None ) {
-					Events.Error( error.ToString() );
-				}
-
-				return new VRActiveActionSet_t { ulActionSet = handle };
-			} ).ToArray();
-
-			var dh = ETrackedControllerRole.Invalid;
-			var error3 = Valve.VR.OpenVR.Input.GetDominantHand( ref dh );
-			if ( error3 != EVRInputError.None ) {
-				Events.Error( $"Couldnt determine dominant hand: {error3}. Falling back to right hand." );
-				dh = ETrackedControllerRole.RightHand;
-			}
-			DominantHand = dh;
-
-			AreComponentsLoaded = true;
-			componentsLoaded?.Invoke();
-			componentsLoaded = null;
-		}
-
-		static event System.Action? componentsLoaded;
-		/// <summary>
-		/// Call the given functions once all controller components are loaded.
-		/// </summary>
-		public static void BindComponentsLoaded ( System.Action action ) {
-			if ( AreComponentsLoaded ) {
-				action();
-			}
-			else componentsLoaded += action;
-		}
-
-		/// <summary>
-		/// Retreives a controller component for a given name declared in the manifest via <see cref="SetManifest(Manifest)"/>.
-		/// The generic type should be one of <see cref="ControllerButton"/>, <see cref="ControllerVector"/>, <see cref="Controller2DVector"/>, <see cref="Controller3DVector"/> or <see cref="ControllerHaptic"/>.
-		/// Additionaly if a controller is specified, the controller component will only receive inputs from that controller.
-		/// </summary>
-		public static T? GetControllerComponent<T> ( object name, Controller? controller = null ) where T : ControllerComponent {
-			controller ??= nullController;
-			if ( components.TryGetValue( name, out var cat ) ) {
-				if ( cat.TryGetValue( controller, out var comp ) ) {
-					return comp as T;
-				}
-				else {
-					comp = cat[ nullController ].CopyWithRestriction( controller.Handle );
-					lock ( componentLock ) { cat.Add( controller, comp ); }
-					return comp as T;
-				}
-			}
-			else return null;
-		}
-
-		/// <summary>
-		/// Submits the image for an eye. Can only be called after <see cref="UpdateDraw(double)"/>
-		/// </summary>
-		public static void SubmitFrame ( EVREye eye, Texture_t texture ) {
-			VRTextureBounds_t bounds = new VRTextureBounds_t { uMin = 0, uMax = 1, vMin = 0, vMax = 1 };
-			var error = Valve.VR.OpenVR.Compositor.Submit( eye, ref texture, ref bounds, EVRSubmitFlags.Submit_Default );
-			if ( error != EVRCompositorError.None ) {
-				Events.Error( $"Frame submit errors: {eye} : {error}" );
-			}
+		chaperone?.Update();
+		foreach ( var i in trackedDevices ) {
+			i.Update();
 		}
 	}
 
-	[Flags]
-	public enum VrState {
-		NotInitialized = 1,
-		OK = 2,
-		HeadsetNotDetected = 4,
-		UnknownError = 8
-	}
+	/// <summary>
+	/// Called on the update thread when the user is doing something else than interacting with the application,
+	/// for example changing settings in the overlay
+	/// </summary>
+	public event Action? UserDistracted;
+	/// <summary>
+	/// Called on the update thread when the user stops interacting with something else than the application,
+	/// for example changing settings in the overlay
+	/// </summary>
+	public event Action? UserFocused;
+	#endregion
 
-	public static class EVRInitErrorExtensions {
-		private static Dictionary<EVRInitError, string> descriptions = new() {
-			[ EVRInitError.Init_HmdNotFound ] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on.",
-			[ EVRInitError.Init_HmdNotFoundPresenceFailed ] = "Headset not found. This can be a USB issue, or your VR rig might just not be turned on."
-		};
+	HashSet<VrDevice> trackedDevices = new();
+	/// <summary>
+	/// All ever detected devices. This is safe to use on the update thread.
+	/// </summary>
+	public IEnumerable<VrDevice> TrackedDevices => trackedDevices;
+	/// <summary>
+	/// All enabled devices. This is safe to use on the update thread.
+	/// </summary>
+	public IEnumerable<VrDevice> ActiveDevices => trackedDevices.Where( x => x.IsEnabled );
+	/// <summary> 
+	/// Invoked when a new device is detected. Devices can never become "undetected". This is safe to use on the update thread.
+	/// </summary>
+	public event Action<VrDevice>? DeviceDetected;
 
-		public static string GetReadableDescription ( this EVRInitError error ) {
-			if ( descriptions.ContainsKey( error ) ) return $"{descriptions[ error ]} ({error})";
-			else return $"{error}";
+	public bool IsHeadsetPresent => Valve.VR.OpenVR.IsHmdPresent();
+	[MemberNotNullWhen( true, nameof( OpenVrRuntimePath ) )]
+	public bool IsOpenVrRuntimeInstalled => Valve.VR.OpenVR.IsRuntimeInstalled();
+	public string? OpenVrRuntimePath => Valve.VR.OpenVR.RuntimePath();
+	public string? OpenVrRuntimeVersion => CVR.GetRuntimeVersion();
+
+	IActionManifest? actionManifest;
+	Dictionary<Enum, IAction> definedActions = new();
+	VRActiveActionSet_t[]? actionSets;
+	/// <summary>
+	/// Fetches an action defined in the action manifest
+	/// </summary>
+	public IAction ActionFor ( Enum action )
+		=> definedActions[action];
+	/// <summary>
+	/// Sets the action manifest. This method will throw if the manifest couldnt be set.
+	/// Returns the absolute path to the action manifest
+	/// </summary>
+	public string SetActionManifest ( IActionManifest manifest, string? path = null ) {
+		path ??= "ActionManifest.json";
+		path = Path.Combine( Directory.GetCurrentDirectory(), path );
+		File.WriteAllText( path, manifest.ToJson() );
+		var error = Valve.VR.OpenVR.Input.SetActionManifestPath( path );
+		if ( error != EVRInputError.None ) {
+			throw new Exception( $"Could not set action manifest: {error}" );
 		}
+
+		var actionSets = manifest.ActionSets.Select( set => {
+			ulong handle = 0;
+			var error = Valve.VR.OpenVR.Input.GetActionSetHandle( set.Path, ref handle );
+			if ( error != EVRInputError.None ) {
+				Events.Log( $"Could not get handle for action set {set.Name}", EventType.CoundntFetchActionSetHandle, error );
+			}
+
+			return new VRActiveActionSet_t { ulActionSet = handle };
+		} ).ToArray();
+
+		foreach ( var set in manifest.ActionSets ) {
+			foreach ( var action in manifest.ActionsForSet( set ) ) {
+				definedActions.Add( action.Name, action );
+			}
+		}
+
+		ETrackedControllerRole hand = ETrackedControllerRole.Invalid;
+		error = Valve.VR.OpenVR.Input.GetDominantHand( ref hand );
+		if ( error is EVRInputError.None )
+			DominantHand = hand;
+
+		actionManifest = manifest;
+		inputScheduler.Enqueue( () => {
+			this.actionSets = actionSets;
+			actionsLoaded?.Invoke();
+			actionsLoaded = null;
+		} );
+
+		return path;
 	}
 
-	public class VrInput {
-		public readonly Headset Headset = new() { DeviceIndex = Valve.VR.OpenVR.k_unTrackedDeviceIndex_Hmd };
-		public readonly Dictionary<int, Controller> Controllers = new();
+	public ETrackedControllerRole DominantHand { get; private set; } = ETrackedControllerRole.Invalid;
+
+	/// <summary>
+	/// Binds an action to perform when the action manifest is loaded,
+	/// or if its already loaded, its invoked immmediately.
+	/// This is safe to call on the input thread
+	/// </summary>
+	public void BindActionsLoaded ( Action action ) {
+		if ( actionManifest != null )
+			inputScheduler.Enqueue( action );
+		else
+			actionsLoaded += action;
+	}
+	event Action? actionsLoaded;
+
+	Dictionary<Enum, Input.Action> actions = new();
+	/// <summary>
+	/// Gets an action defined in the action manifest. This is safe to use on the input thread,
+	/// as well as with <see cref="BindActionsLoaded(Action)"/>, as it will be scheduled to execute on the input thread
+	/// </summary>
+	/// <typeparam name="T">
+	/// The action type, coresponding to the defined <see cref="ActionType"/>.
+	/// Currently implemented ones are <see cref="Input.BooleanAction"/>, <see cref="Input.ScalarAction"/>,
+	/// <see cref="Input.Vector2Action"/>, <see cref="Input.Vector3Action"/>, <see cref="Input.HapticAction"/>,
+	/// <see cref="Input.PoseAction"/> and <see cref="Input.HandSkeletonAction"/>
+	/// </typeparam>
+	public T? GetAction<T> ( Enum action, Controller? controller = null ) where T : Input.Action {
+		if ( controller != null )
+			return controller.GetAction<T>( action );
+
+		if ( !actions.TryGetValue( action, out var value ) ) {
+			var @params = definedActions[action];
+			actions.Add( action, value = @params.CreateAction( this, null ) );
+		}
+
+		return value as T;
 	}
 }
