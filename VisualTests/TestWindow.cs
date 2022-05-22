@@ -4,6 +4,7 @@ using OpenTK.Windowing.GraphicsLibraryFramework;
 using OpenVR.NET;
 using OpenVR.NET.Devices;
 using System.Collections.Concurrent;
+using Valve.VR;
 using VisualTests.Graphics;
 using VisualTests.Scene;
 using VisualTests.Vertices;
@@ -36,6 +37,8 @@ internal class TestWindow : GameWindow {
 		};
 
 		framebuffer = new();
+		left = new();
+		right = new();
 		VR = new();
 
 		VR.DeviceDetected += onVrDeviceDetected;
@@ -111,6 +114,8 @@ internal class TestWindow : GameWindow {
 	Texture whitePixel;
 
 	Framebuffer framebuffer;
+	Framebuffer left;
+	Framebuffer right;
 
 	Transform shapeTransform = new();
 	Transform cameraTransform = new();
@@ -202,6 +207,7 @@ internal class TestWindow : GameWindow {
 	ConcurrentDictionary<int, Texture> textures = new();
 
 	ConcurrentQueue<Action> drawScheduler = new();
+	Transform headTransform = new();
 	protected override void OnRenderFrame ( FrameEventArgs args ) {
 		base.OnRenderFrame( args );
 		while ( drawScheduler.TryDequeue( out var action ) ) {
@@ -209,8 +215,37 @@ internal class TestWindow : GameWindow {
 		}
 
 		var ctx = VR.UpdateDraw();
+		if ( ctx != null ) {
+			// draw to vr
+			drawHeadset = false;
+			var headset = VR.TrackedDevices.OfType<Headset>().FirstOrDefault();
+			if ( headset is null )
+				return;
 
-		drawScene( framebuffer );
+			headTransform.Position = new( headset.RenderPosition.X, headset.RenderPosition.Y, headset.RenderPosition.Z );
+			headTransform.Rotation = new( headset.RenderRotation.X, headset.RenderRotation.Y, headset.RenderRotation.Z, headset.RenderRotation.W );
+
+			var lm = convert( ctx.GetEyeToHeadMatrix( EVREye.Eye_Left ) ).Inverted();
+			var lp = convert( ctx.GetProjectionMatrix( EVREye.Eye_Left, 0.01f, 1000 ) );
+			projectionMatrix = headTransform.MatrixInverse * lm * Matrix4.CreateScale( 1, 1, -1 ) * lp;
+			drawScene( left, (int)ctx.Resolution.X, (int)ctx.Resolution.Y );
+			ctx.SubmitFrame( EVREye.Eye_Left, new() { eType = ETextureType.OpenGL, handle = (IntPtr)left.Texture.Handle } );
+
+			var rm = convert( ctx.GetEyeToHeadMatrix( EVREye.Eye_Right ) ).Inverted();
+			var rp = convert( ctx.GetProjectionMatrix( EVREye.Eye_Right, 0.01f, 1000 ) );
+			projectionMatrix = headTransform.MatrixInverse * rm * Matrix4.CreateScale( 1, 1, -1 ) * rp;
+			drawScene( right, (int)ctx.Resolution.X, (int)ctx.Resolution.Y );
+			ctx.SubmitFrame( EVREye.Eye_Right, new() { eType = ETextureType.OpenGL, handle = (IntPtr)right.Texture.Handle } );
+		}
+
+		drawHeadset = true;
+		projectionMatrix = cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
+			MathF.PI / 2,
+			(float)Size.X / Size.Y,
+			0.01f,
+			1000f
+		);
+		drawScene( framebuffer, Size.X, Size.Y );
 		GL.Viewport( 0, 0, Size.X, Size.Y );
 		GL.Disable( EnableCap.DepthTest );
 		textureShader.Bind();
@@ -221,14 +256,16 @@ internal class TestWindow : GameWindow {
 		SwapBuffers();
 	}
 
-	void drawScene ( Framebuffer framebuffer ) {
-		framebuffer.Resize( Size.X, Size.Y );
+	void drawScene ( Framebuffer framebuffer, int width, int height ) {
+		framebuffer.Resize( width, height );
 		framebuffer.Bind();
-		GL.Viewport( 0, 0, framebuffer.Width, framebuffer.Height );
+		GL.Viewport( 0, 0, width, height );
 		drawScene();
 		framebuffer.Unbind();
 	}
 
+	Matrix4 projectionMatrix;
+	bool drawHeadset = true;
 	void drawScene () {
 		GL.ClearColor( 0.2f, 0.3f, 0.3f, 1.0f );
 		GL.Enable( EnableCap.DepthTest );
@@ -236,12 +273,7 @@ internal class TestWindow : GameWindow {
 		unlitShader.Bind();
 		susie.Bind();
 		unlitShader.SetUniform( "tint", new Color4( 1f, 1, 1, 1 ) );
-		unlitShader.SetUniform( "gProj", cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
-			MathF.PI / 2,
-			(float)Size.X / Size.Y,
-			0.01f,
-			1000f
-		) );
+		unlitShader.SetUniform( "gProj", projectionMatrix );
 		GL.BindVertexArray( VAO );
 		var cubePositions = new Vector3[] {
 			new( 2.0f,  5.0f, 15.0f),
@@ -261,6 +293,9 @@ internal class TestWindow : GameWindow {
 		}
 
 		foreach ( var i in models ) {
+			if ( i.Device is Headset && !drawHeadset )
+				continue;
+
 			i.Mesh.Bind();
 			unlitShader.SetUniform( "transform", i.Transform.Matrix );
 			i.Texture?.Bind();
@@ -317,5 +352,28 @@ internal class TestWindow : GameWindow {
 
 		if ( dir != Vector3.Zero )
 			cameraTransform.Position += dir.Normalized() * (float)args.Time * 5;
+	}
+
+	private Matrix4 convert ( System.Numerics.Matrix4x4 mat ) {
+		var m = new Matrix4() {
+			M11 = mat.M11,
+			M12 = mat.M12,
+			M13 = mat.M13,
+			M14 = mat.M14,
+			M21 = mat.M21,
+			M22 = mat.M22,
+			M23 = mat.M23,
+			M24 = mat.M24,
+			M31 = mat.M31,
+			M32 = mat.M32,
+			M33 = mat.M33,
+			M34 = mat.M34,
+			M41 = mat.M41,
+			M42 = mat.M42,
+			M43 = mat.M43,
+			M44 = mat.M44
+		};
+		m.Transpose();
+		return m;
 	}
 }

@@ -6,10 +6,23 @@ namespace OpenVR.NET;
 
 public interface IVRDrawContext {
 	Vector2 Resolution { get; }
+	/// <summary>
+	/// Projection for the given eye. To generate a correct matrix from draw information it should be
+	/// <c>GetProjectionMatrix * GetEyeToHeadMatrix.Inverse * inverseHeadTransform</c> (where left side gets applied last)
+	/// </summary>
 	Matrix4x4 GetProjectionMatrix ( EVREye eye, float nearPlane, float farPlane );
 	(float left, float right, float bottom, float top) GetProjectionMatrixParams ( EVREye eye );
-	Matrix4x4 GetHeadToEyeMatrix ( EVREye eye );
+	/// <summary>
+	/// Eye to head matrix. Invert to get head to eye. To generate a correct matrix from draw information it should be
+	/// <c>GetProjectionMatrix * GetEyeToHeadMatrix.Inverse * inverseHeadTransform</c> (where left side gets applied last)
+	/// </summary>
+	Matrix4x4 GetEyeToHeadMatrix ( EVREye eye );
+
+	/// <summary>
+	/// Submits the image for an eye. Can only be called after <see cref="UpdateDraw(double)"/>
+	/// </summary>
 	void SubmitFrame ( EVREye eye, Texture_t texture, EVRSubmitFlags flags = EVRSubmitFlags.Submit_Default );
+
 	/// <summary>
 	/// Gets a mesh which will cover the area of the render texture that is not visible
 	/// </summary>
@@ -36,9 +49,6 @@ class DrawContext : IVRDrawContext {
 		Resolution = new Vector2( w, h );
 	}
 
-	/// <summary>
-	/// Submits the image for an eye. Can only be called after <see cref="UpdateDraw(double)"/>
-	/// </summary>
 	public void SubmitFrame ( EVREye eye, Texture_t texture, EVRSubmitFlags flags = EVRSubmitFlags.Submit_Default ) {
 		VRTextureBounds_t bounds = new VRTextureBounds_t { uMin = 0, uMax = 1, vMin = 0, vMax = 1 };
 		var error = Valve.VR.OpenVR.Compositor.Submit( eye, ref texture, ref bounds, flags );
@@ -66,12 +76,12 @@ class DrawContext : IVRDrawContext {
 		return new Matrix4x4(
 			matrix.m0, matrix.m1, matrix.m2, matrix.m3,
 			matrix.m4, matrix.m5, matrix.m6, matrix.m7,
-			matrix.m8, matrix.m9, -matrix.m10, matrix.m11,
-			matrix.m12, matrix.m13, -matrix.m14, matrix.m15
+			matrix.m8, matrix.m9, matrix.m10, matrix.m11,
+			matrix.m12, matrix.m13, matrix.m14, matrix.m15
 		);
 	}
 
-	public Matrix4x4 GetHeadToEyeMatrix ( EVREye eye ) {
+	public Matrix4x4 GetEyeToHeadMatrix ( EVREye eye ) {
 		var matrix = VR.CVR.GetEyeToHeadTransform( eye );
 
 		return new Matrix4x4(

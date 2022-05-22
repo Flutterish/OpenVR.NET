@@ -246,7 +246,7 @@ public class ComponentModel {
 	/// </summary>
 	public async void FreeResources () {
 		if ( loadedModelPtr is IntPtr m ) {
-			var modelLock = modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
+			var modelLock = loadLock;//modelLoadLocks.GetOrAdd( ModelName, _ => new( 1, 1 ) );
 			await modelLock.WaitAsync();
 			Valve.VR.OpenVR.RenderModels.FreeRenderModel( m );
 			loadedModelPtr = null;
