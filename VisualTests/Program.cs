@@ -2,8 +2,8 @@
 
 using var program = new TestWindow( new() {
 	IsMultiThreaded = false,
-	RenderFrequency = 120,
-	UpdateFrequency = 240
+	RenderFrequency = 999,
+	UpdateFrequency = 999
 }, new() {
 	
 } );
