@@ -218,8 +218,7 @@ internal class TestWindow : GameWindow {
 		if ( ctx != null ) {
 			// draw to vr
 			drawHeadset = false;
-			var headset = VR.TrackedDevices.OfType<Headset>().FirstOrDefault();
-			if ( headset is null )
+			if ( VR.Headset is not Headset headset )
 				return;
 
 			headTransform.Position = new( headset.RenderPosition.X, headset.RenderPosition.Y, headset.RenderPosition.Z );

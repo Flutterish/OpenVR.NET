@@ -200,6 +200,15 @@ public class VR {
 
 				trackedDeviceOwners.Add( i, (device, owner) );
 				updateScheduler.Enqueue( () => {
+					if ( device is Headset headset )
+						Headset = headset;
+					else if ( device is Controller controller ) {
+						if ( controller.Role is ETrackedControllerRole.LeftHand )
+							LeftController = controller;
+						else if ( controller.Role is ETrackedControllerRole.RightHand )
+							RightController = controller;
+					}
+
 					trackedDevices.Add( device );
 					DeviceDetected?.Invoke( device );
 				} );
@@ -342,6 +351,9 @@ public class VR {
 	#endregion
 
 	HashSet<VrDevice> trackedDevices = new();
+	public Headset? Headset { get; private set; }
+	public Controller? LeftController { get; private set; }
+	public Controller? RightController { get; private set; }
 	/// <summary>
 	/// All ever detected devices. This is safe to use on the update thread.
 	/// </summary>
