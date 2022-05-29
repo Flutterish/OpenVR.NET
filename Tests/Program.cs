@@ -123,9 +123,9 @@ vr.DeviceDetected += d => {
 		void save ( ComponentModel comp ) {
 			StringBuilder sb = new();
 			var name = $"{( comp.ParentName is null ? "" : $"{comp.ParentName}+" )}{comp.Name}".Replace( '/', '-' ).Replace( '\\', '-' );
-			_ = comp.LoadAsync( addTexture: async ( id, load ) => {
-				if ( textures.TryAdd( id, $"./{name}.png" ) ) {
-					var tx = await load();
+			_ = comp.LoadAsync( addTexture: async image => {
+				if ( textures.TryAdd( image.ID, $"./{name}.png" ) ) {
+					var tx = await image.LoadImage();
 					if ( tx != null ) {
 						await tx.SaveAsPngAsync( $"./{name}.png" );
 						Log( $"Saved model texture at `./{name}.png`" );
@@ -136,7 +136,7 @@ vr.DeviceDetected += d => {
 					}
 				}
 				else {
-					textures.TryGetValue( id, out var path );
+					textures.TryGetValue( image.ID, out var path );
 					Log( $"{name} shares texture at `{path}`" );
 				}
 			}, onError: ( err, ctx ) => {

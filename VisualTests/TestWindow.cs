@@ -13,6 +13,7 @@ namespace VisualTests;
 internal class TestWindow : GameWindow {
 	VR VR;
 	bool vrReady;
+	DisplayedBuffer displayed = DisplayedBuffer.Screen;
 
 	public TestWindow ( GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings ) 
 		: base( gameWindowSettings, nativeWindowSettings ) {
@@ -80,10 +81,10 @@ internal class TestWindow : GameWindow {
 					mesh.Indices.Add( (uint)b );
 					mesh.Indices.Add( (uint)c );
 				},
-				addTexture: ( id, create ) => {
+				addTexture: img => {
 					drawScheduler.Enqueue( () => {
-						texture = textures.GetOrAdd( id, id => {
-							var image = create( flipVertically: true );
+						texture = textures.GetOrAdd( img.ID, id => {
+							var image = img.LoadImage( flipVertically: true );
 							var tx = new Texture();
 							image.ContinueWith( r => {
 								drawScheduler.Enqueue( () => tx.Upload( r.Result! ) );
@@ -237,18 +238,25 @@ internal class TestWindow : GameWindow {
 			ctx.SubmitFrame( EVREye.Eye_Right, new() { eType = ETextureType.OpenGL, handle = (IntPtr)right.Texture.Handle } );
 		}
 
-		drawHeadset = true;
-		projectionMatrix = cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
-			MathF.PI / 2,
-			(float)Size.X / Size.Y,
-			0.01f,
-			1000f
-		);
-		drawScene( framebuffer, Size.X, Size.Y );
+		if ( displayed is DisplayedBuffer.Screen ) {
+			drawHeadset = true;
+			projectionMatrix = cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
+				MathF.PI / 2,
+				(float)Size.X / Size.Y,
+				0.01f,
+				1000f
+			);
+			drawScene( framebuffer, Size.X, Size.Y );
+		}
+		var buffer = displayed switch {
+			DisplayedBuffer.Screen => framebuffer,
+			DisplayedBuffer.Left => left,
+			_ => right
+		};
 		GL.Viewport( 0, 0, Size.X, Size.Y );
 		GL.Disable( EnableCap.DepthTest );
 		textureShader.Bind();
-		framebuffer.Texture.Bind();
+		buffer.Texture.Bind();
 		GL.BindVertexArray( blitVAO );
 		GL.DrawElements( PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, IntPtr.Zero );
 
@@ -351,6 +359,9 @@ internal class TestWindow : GameWindow {
 
 		if ( dir != Vector3.Zero )
 			cameraTransform.Position += dir.Normalized() * (float)args.Time * 5;
+
+		if ( KeyboardState.IsKeyPressed( Keys.Tab ) )
+			displayed = (DisplayedBuffer)(( (int)displayed + 1 ) % 3);
 	}
 
 	private Matrix4 convert ( System.Numerics.Matrix4x4 mat ) {
@@ -375,4 +386,11 @@ internal class TestWindow : GameWindow {
 		m.Transpose();
 		return m;
 	}
+}
+
+
+enum DisplayedBuffer {
+	Screen,
+	Left,
+	Right
 }

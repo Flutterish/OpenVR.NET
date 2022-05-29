@@ -86,9 +86,48 @@ public class ComponentModel {
 	int? loadedTextureIndex;
 
 	public delegate void AddVertice ( Vector3 position, Vector3 normal, Vector2 uv );
-	/// <param name="id">A unique ID that represents the texture. You can cache textures with this key to prevent loading them again</param>
-	public delegate void AddTexture ( int id, ImageLoader load );
-	public delegate Task<Image<Rgba32>?> ImageLoader ( bool flipVertically = false );
+	
+	public readonly struct Texture {
+		/// <summary>
+		/// A unique ID that represents the texture. You can cache textures with this key to prevent loading them again
+		/// </summary>
+		public int ID { get; init; }
+		/// <summary>
+		/// Loads the image into memory and retrieves params to load the data (RGBA32 format - 8 bits per channel).
+		/// Please make sure you don't <seealso cref="FreeResources"/> until you're done with this data. Take note
+		/// that if the data is <see cref="IntPtr.Zero"/>, the data is invalid.
+		/// </summary>
+		public delegate Task<(int width, int height, IntPtr data)> ImageParamLoader ();
+		/// <inheritdoc cref="ImageParamLoader"/>
+		public ImageParamLoader ParamsLoader { private get; init; }
+
+		/// <summary>
+		/// Loads the image as an ImageSharp image. 
+		/// Please make sure you don't <seealso cref="FreeResources"/> until the image is loaded
+		/// </summary>
+		public async Task<Image<Rgba32>?> LoadImage ( bool flipVertically = false ) {
+			var (width, height, pointer) = await LoadParams();
+
+			var data = new byte[width * height * 4];
+			Marshal.Copy( pointer, data, 0, data.Length );
+			Image<Rgba32> image = new( width, height );
+
+			image.ProcessPixelRows( rows => {
+				var stride = width * 4;
+				for ( int y = 0; y < height; y++ ) {
+					var span = rows.GetRowSpan( flipVertically ? ( height - y - 1 ) : y );
+					var byteSpan = MemoryMarshal.CreateSpan( ref span[0].R, stride );
+					data.AsSpan( stride * y, stride ).CopyTo( byteSpan );
+				}
+			} );
+
+			return image;
+		}
+
+		/// <inheritdoc cref="ImageParamLoader"/>
+		public Task<(int width, int height, IntPtr data)> LoadParams ()
+			=> ParamsLoader();
+	}
 
 	public enum Context {
 		Model,
@@ -112,7 +151,7 @@ public class ComponentModel {
 		Action<ComponentType>? finish = null,
 		AddVertice? addVertice = null,
 		Action<short, short, short>? addTriangle = null,
-		AddTexture? addTexture = null,
+		Action<Texture>? addTexture = null,
 		Action<EVRRenderModelError, Context>? onError = null ) {
 
 		// TODO idk. for some reason loading more than one sometimes leads to some of them missing
@@ -168,49 +207,36 @@ public class ComponentModel {
 			}
 
 			if ( addTexture != null && model.diffuseTextureId >= 0 ) {
-				addTexture( model.diffuseTextureId, async flipVertically => {
-					var textureLock = textureLoadLocks.GetOrAdd( model.diffuseTextureId, _ => new( 1, 1 ) );
-					await textureLock.WaitAsync();
+				addTexture( new() { 
+					ID = model.diffuseTextureId,
+					ParamsLoader = async () => {
+						var textureLock = textureLoadLocks.GetOrAdd( model.diffuseTextureId, _ => new( 1, 1 ) );
+						await textureLock.WaitAsync();
 
-					IntPtr texturePtr = IntPtr.Zero;
-					while ( ( error = Valve.VR.OpenVR.RenderModels.LoadTexture_Async( model.diffuseTextureId, ref texturePtr ) ) is EVRRenderModelError.Loading ) {
-						await Task.Delay( 10 );
-					}
+						IntPtr texturePtr = IntPtr.Zero;
+						while ( ( error = Valve.VR.OpenVR.RenderModels.LoadTexture_Async( model.diffuseTextureId, ref texturePtr ) ) is EVRRenderModelError.Loading ) {
+							await Task.Delay( 10 );
+						}
 
-					loadedTextureIndex = model.diffuseTextureId;
-					loadedTexturePtr = texturePtr;
-					if ( error is EVRRenderModelError.None ) {
-						RenderModel_TextureMap_t texture = new();
-						if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
-							var packedModel = Marshal.PtrToStructure<RenderModel_TextureMap_t_Packed>( texturePtr );
-							packedModel.Unpack( ref texture );
+						loadedTextureIndex = model.diffuseTextureId;
+						loadedTexturePtr = texturePtr;
+						if ( error is EVRRenderModelError.None ) {
+							RenderModel_TextureMap_t texture = new();
+							if ( Environment.OSVersion.Platform is PlatformID.MacOSX or PlatformID.Unix ) {
+								var packedModel = Marshal.PtrToStructure<RenderModel_TextureMap_t_Packed>( texturePtr );
+								packedModel.Unpack( ref texture );
+							}
+							else {
+								texture = Marshal.PtrToStructure<RenderModel_TextureMap_t>( texturePtr );
+							}
+							textureLock.Release();
+							return ( texture.unWidth, texture.unHeight, texture.rubTextureMapData );
 						}
 						else {
-							texture = Marshal.PtrToStructure<RenderModel_TextureMap_t>( texturePtr );
+							onError?.Invoke( error, Context.Texture );
+							textureLock.Release();
+							return (0, 0, IntPtr.Zero);
 						}
-
-						var data = new byte[texture.unWidth * texture.unHeight * 4];
-						Marshal.Copy( texture.rubTextureMapData, data, 0, data.Length );
-						Image<Rgba32> image = new( texture.unWidth, texture.unHeight );
-
-						image.ProcessPixelRows( rows => {
-							int i = 0;
-							var stride = texture.unWidth * 4;
-							for ( int y = 0; y < texture.unHeight; y++ ) {
-								var span = rows.GetRowSpan( flipVertically ? ( texture.unHeight - y - 1 ) : y );
-								for ( int x = 0; x < texture.unWidth; x++ ) {
-									span[x] = new( data[i++], data[i++], data[i++], data[i++] );
-								}
-							}
-						} );
-
-						textureLock.Release();
-						return image;
-					}
-					else {
-						onError?.Invoke( error, Context.Texture );
-						textureLock.Release();
-						return null;
 					}
 				} );
 			}
