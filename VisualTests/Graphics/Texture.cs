@@ -61,6 +61,18 @@ public class Texture {
 		image.Dispose();
 	}
 
+	public void Upload ( IntPtr ptr, int width, int height ) {
+		GL.BindTexture( TextureTarget.Texture2D, Handle );
+		GL.TexParameter( TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge );
+		GL.TexParameter( TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge );
+		GL.TexParameter( TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest );
+		GL.TexParameter( TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest );
+
+		Width = width;
+		Height = height;
+		GL.TexImage2D( TextureTarget2d.Texture2D, 0, TextureComponentCount.Rgba, Width, Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, ptr );
+	}
+
 	public void Upload ( string path ) {
 		var image = Image.Load<Rgba32>( path );
 		image.Mutate( x => x.Flip( FlipMode.Vertical ) );

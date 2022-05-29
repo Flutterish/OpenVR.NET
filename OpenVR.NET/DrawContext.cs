@@ -30,6 +30,17 @@ public interface IVRDrawContext {
 	void GetHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle );
 
 	/// <summary>
+	/// Gets a mesh which will cover the area of the render texture that is visible.
+	/// The mesh is in UV coordinates.
+	/// </summary>
+	void GetInverseHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle );
+
+	/// <summary>
+	/// idk
+	/// </summary>
+	void GetLoopHiddenAreaMesh ( EVREye eye, Action<Vector2> addVertex );
+
+	/// <summary>
 	/// Whether OpenVR is rendering controllers on its own - you should consider not drawing user hands/controllers if this is <see langword="true"/>
 	/// </summary>
 	bool OverlayRendersControllers { get; }
@@ -69,6 +80,28 @@ class DrawContext : IVRDrawContext {
 			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + size );
 			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + size + size );
 			addTriangle( new( a.v0, a.v1 ), new( b.v0, b.v1 ), new( c.v0, c.v1 ) );
+		}
+	}
+
+	public void GetInverseHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle ) {
+		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_Inverse );
+		var size = Marshal.SizeOf<HmdVector2_t>();
+		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
+			var ptr = mesh.pVertexData + size * i * 3;
+			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
+			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + size );
+			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + size + size );
+			addTriangle( new( a.v0, a.v1 ), new( b.v0, b.v1 ), new( c.v0, c.v1 ) );
+		}
+	}
+
+	public void GetLoopHiddenAreaMesh ( EVREye eye, Action<Vector2> addVertex ) {
+		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_LineLoop );
+		var size = Marshal.SizeOf<HmdVector2_t>();
+		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
+			var ptr = mesh.pVertexData + size * i;
+			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
+			addVertex( new( a.v0, a.v1 ) );
 		}
 	}
 

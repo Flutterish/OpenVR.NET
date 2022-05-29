@@ -99,6 +99,54 @@ draw = new Thread( createInterval( 17, () => {
 			await File.WriteAllTextAsync( "./rightHiddenMesh.obj", right.ToString() );
 			Log( "Saved right eye hidden mesh to `./rightHiddenMesh.obj`" );
 		} );
+
+		StringBuilder leftinv = new();
+		i = 1;
+		ctx.GetInverseHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
+			leftinv.AppendLine( $"v {a.X} {a.Y} 0" );
+			leftinv.AppendLine( $"v {b.X} {b.Y} 0" );
+			leftinv.AppendLine( $"v {c.X} {c.Y} 0" );
+			leftinv.AppendLine( $"f {i++} {i++} {i++}" );
+		} );
+
+		StringBuilder rightinv = new();
+		i = 1;
+		ctx.GetInverseHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
+			rightinv.AppendLine( $"v {a.X} {a.Y} 0" );
+			rightinv.AppendLine( $"v {b.X} {b.Y} 0" );
+			rightinv.AppendLine( $"v {c.X} {c.Y} 0" );
+			rightinv.AppendLine( $"f {i++} {i++} {i++}" );
+		} );
+
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./leftInverseHiddenMesh.obj", leftinv.ToString() );
+			Log( "Saved inverse left eye hidden mesh to `./leftInverseHiddenMesh.obj`" );
+		} );
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./rightInverseHiddenMesh.obj", rightinv.ToString() );
+			Log( "Saved inverse right eye hidden mesh to `./rightInverseHiddenMesh.obj`" );
+		} );
+
+		StringBuilder leftloop = new();
+		i = 1;
+		ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Left, a => {
+			leftloop.AppendLine( $"v {a.X} {a.Y} 0" );
+		} );
+
+		StringBuilder rightloop = new();
+		i = 1;
+		ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Right, a => {
+			rightloop.AppendLine( $"v {a.X} {a.Y} 0" );
+		} );
+
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./leftLoopHiddenMesh.obj", leftloop.ToString() );
+			Log( "Saved loop left eye hidden mesh to `./leftLoopHiddenMesh.obj`" );
+		} );
+		Task.Run( async () => {
+			await File.WriteAllTextAsync( "./rightLoopHiddenMesh.obj", rightloop.ToString() );
+			Log( "Saved loop right eye hidden mesh to `./rightLoopHiddenMesh.obj`" );
+		} );
 	}
 }, () => {
 	Log( "Draw thread stopped", draw );

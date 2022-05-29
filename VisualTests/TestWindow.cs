@@ -73,7 +73,7 @@ internal class TestWindow : GameWindow {
 				addVertice: ( pos, norm, uv ) => {
 					mesh.Vertices.Add( new() {
 						Position = new( pos.X, pos.Y, pos.Z ),
-						UV = new( uv.X, uv.Y )
+						UV = new( uv.X, 1 - uv.Y )
 					} );
 				},
 				addTriangle: ( a, b, c ) => {
@@ -84,10 +84,10 @@ internal class TestWindow : GameWindow {
 				addTexture: img => {
 					drawScheduler.Enqueue( () => {
 						texture = textures.GetOrAdd( img.ID, id => {
-							var image = img.LoadImage( flipVertically: true );
+							var image = img.LoadParams();
 							var tx = new Texture();
 							image.ContinueWith( r => {
-								drawScheduler.Enqueue( () => tx.Upload( r.Result! ) );
+								drawScheduler.Enqueue( () => tx.Upload( r.Result.data, r.Result.width, r.Result.height ) );
 							} );
 							return tx;
 						} );
@@ -347,6 +347,9 @@ internal class TestWindow : GameWindow {
 
 		foreach ( var i in models ) {
 			if ( i.Device is Headset && !drawHeadset )
+				continue;
+
+			if ( !i.IsVisible )
 				continue;
 
 			i.Mesh.Bind();
