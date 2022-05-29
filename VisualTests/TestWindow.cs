@@ -278,27 +278,27 @@ internal class TestWindow : GameWindow {
 		leftHiddenMesh = new( v => PositionVertex.Upload( v, v.Length ) );
 		leftHiddenMesh.Link( basicShader, s => PositionVertex.Link( position: s.GetAttrib( "aPos" ) ) );
 		uint i = 0;
-		ctx.GetHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
-			leftHiddenMesh.Vertices.Add( new( (a.X - 0.5f) * 2, (a.Y - 0.5f) * 2, 0 ) );
-			leftHiddenMesh.Vertices.Add( new( (b.X - 0.5f) * 2, (b.Y - 0.5f) * 2, 0 ) );
-			leftHiddenMesh.Vertices.Add( new( (c.X - 0.5f) * 2, (c.Y - 0.5f) * 2, 0 ) );
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Left ) ) {
+			leftHiddenMesh.Vertices.Add( new( ( a.X - 0.5f ) * 2, ( a.Y - 0.5f ) * 2, 0 ) );
+			leftHiddenMesh.Vertices.Add( new( ( b.X - 0.5f ) * 2, ( b.Y - 0.5f ) * 2, 0 ) );
+			leftHiddenMesh.Vertices.Add( new( ( c.X - 0.5f ) * 2, ( c.Y - 0.5f ) * 2, 0 ) );
 			leftHiddenMesh.Indices.Add( i++ );
 			leftHiddenMesh.Indices.Add( i++ );
 			leftHiddenMesh.Indices.Add( i++ );
-		} );
+		}
 		leftHiddenMesh.Upload();
 
 		rightHiddenMesh = new( v => PositionVertex.Upload( v, v.Length ) );
 		rightHiddenMesh.Link( basicShader, s => PositionVertex.Link( position: s.GetAttrib( "aPos" ) ) );
 		i = 0;
-		ctx.GetHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
-			rightHiddenMesh.Vertices.Add( new( (a.X - 0.5f) * 2, (a.Y - 0.5f) * 2, 0 ) );
-			rightHiddenMesh.Vertices.Add( new( (b.X - 0.5f) * 2, (b.Y - 0.5f) * 2, 0 ) );
-			rightHiddenMesh.Vertices.Add( new( (c.X - 0.5f) * 2, (c.Y - 0.5f) * 2, 0 ) );
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Right ) ) {
+			rightHiddenMesh.Vertices.Add( new( ( a.X - 0.5f ) * 2, ( a.Y - 0.5f ) * 2, 0 ) );
+			rightHiddenMesh.Vertices.Add( new( ( b.X - 0.5f ) * 2, ( b.Y - 0.5f ) * 2, 0 ) );
+			rightHiddenMesh.Vertices.Add( new( ( c.X - 0.5f ) * 2, ( c.Y - 0.5f ) * 2, 0 ) );
 			rightHiddenMesh.Indices.Add( i++ );
 			rightHiddenMesh.Indices.Add( i++ );
 			rightHiddenMesh.Indices.Add( i++ );
-		} );
+		}
 		rightHiddenMesh.Upload();
 	}
 

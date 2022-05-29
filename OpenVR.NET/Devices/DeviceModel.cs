@@ -142,9 +142,7 @@ public class ComponentModel {
 	}
 
 	/// <summary>
-	/// Loads the model asynchronously (on a thread pool).
-	/// If a callback is not registered, the associated resource will not be loaded,
-	/// otherwise it is your responsibility to dispose of any received disposable resources.
+	/// Loads the model asynchronously (on a thread pool)
 	/// </summary>
 	public async Task LoadAsync (
 		Func<ComponentType, bool>? begin = null,

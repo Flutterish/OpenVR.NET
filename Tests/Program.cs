@@ -75,21 +75,21 @@ draw = new Thread( createInterval( 17, () => {
 		hiddenMeshSaved = true;
 		StringBuilder left = new();
 		int i = 1;
-		ctx.GetHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Left ) ) {
 			left.AppendLine( $"v {a.X} {a.Y} 0" );
 			left.AppendLine( $"v {b.X} {b.Y} 0" );
 			left.AppendLine( $"v {c.X} {c.Y} 0" );
 			left.AppendLine( $"f {i++} {i++} {i++}" );
-		} );
+		}
 
 		StringBuilder right = new();
 		i = 1;
-		ctx.GetHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Right ) ) {
 			right.AppendLine( $"v {a.X} {a.Y} 0" );
 			right.AppendLine( $"v {b.X} {b.Y} 0" );
 			right.AppendLine( $"v {c.X} {c.Y} 0" );
 			right.AppendLine( $"f {i++} {i++} {i++}" );
-		} );
+		}
 
 		Task.Run( async () => {
 			await File.WriteAllTextAsync( "./leftHiddenMesh.obj", left.ToString() );
@@ -102,21 +102,21 @@ draw = new Thread( createInterval( 17, () => {
 
 		StringBuilder leftinv = new();
 		i = 1;
-		ctx.GetInverseHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Left, inverse: true ) ) {
 			leftinv.AppendLine( $"v {a.X} {a.Y} 0" );
 			leftinv.AppendLine( $"v {b.X} {b.Y} 0" );
 			leftinv.AppendLine( $"v {c.X} {c.Y} 0" );
 			leftinv.AppendLine( $"f {i++} {i++} {i++}" );
-		} );
+		}
 
 		StringBuilder rightinv = new();
 		i = 1;
-		ctx.GetInverseHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
+		foreach ( var (a, b, c) in ctx.GetHiddenAreaMesh( EVREye.Eye_Right, inverse: true ) ) {
 			rightinv.AppendLine( $"v {a.X} {a.Y} 0" );
 			rightinv.AppendLine( $"v {b.X} {b.Y} 0" );
 			rightinv.AppendLine( $"v {c.X} {c.Y} 0" );
 			rightinv.AppendLine( $"f {i++} {i++} {i++}" );
-		} );
+		}
 
 		Task.Run( async () => {
 			await File.WriteAllTextAsync( "./leftInverseHiddenMesh.obj", leftinv.ToString() );
@@ -128,16 +128,14 @@ draw = new Thread( createInterval( 17, () => {
 		} );
 
 		StringBuilder leftloop = new();
-		i = 1;
-		ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Left, a => {
+		foreach ( var a in ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Left ) ) {
 			leftloop.AppendLine( $"v {a.X} {a.Y} 0" );
-		} );
+		}
 
 		StringBuilder rightloop = new();
-		i = 1;
-		ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Right, a => {
+		foreach ( var a in ctx.GetLoopHiddenAreaMesh( EVREye.Eye_Right ) ) {
 			rightloop.AppendLine( $"v {a.X} {a.Y} 0" );
-		} );
+		}
 
 		Task.Run( async () => {
 			await File.WriteAllTextAsync( "./leftLoopHiddenMesh.obj", leftloop.ToString() );

@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using System.Runtime.InteropServices;
 using Valve.VR;
 
 namespace OpenVR.NET;
@@ -24,21 +23,16 @@ public interface IVRDrawContext {
 	void SubmitFrame ( EVREye eye, Texture_t texture, EVRSubmitFlags flags = EVRSubmitFlags.Submit_Default );
 
 	/// <summary>
-	/// Gets a mesh which will cover the area of the render texture that is not visible.
+	/// Gets a mesh which will cover the area of the render texture that is not visible ( or visible if <paramref name="inverse"/> is <see langword="true"/> ).
 	/// The mesh is in UV coordinates.
 	/// </summary>
-	void GetHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle );
+	ReadOnlySpan<(Vector2, Vector2, Vector2)> GetHiddenAreaMesh ( EVREye eye, bool inverse = false );
 
 	/// <summary>
-	/// Gets a mesh which will cover the area of the render texture that is visible.
+	/// Gets a vertex loop around the area of the render texture which is visible.
 	/// The mesh is in UV coordinates.
 	/// </summary>
-	void GetInverseHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle );
-
-	/// <summary>
-	/// idk
-	/// </summary>
-	void GetLoopHiddenAreaMesh ( EVREye eye, Action<Vector2> addVertex );
+	ReadOnlySpan<Vector2> GetLoopHiddenAreaMesh ( EVREye eye );
 
 	/// <summary>
 	/// Whether OpenVR is rendering controllers on its own - you should consider not drawing user hands/controllers if this is <see langword="true"/>
@@ -71,37 +65,19 @@ class DrawContext : IVRDrawContext {
 
 	public Vector2 Resolution { get; }
 
-	public void GetHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle ) {
-		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_Standard );
-		var size = Marshal.SizeOf<HmdVector2_t>();
-		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
-			var ptr = mesh.pVertexData + size * i * 3;
-			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
-			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + size );
-			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + size + size );
-			addTriangle( new( a.v0, a.v1 ), new( b.v0, b.v1 ), new( c.v0, c.v1 ) );
+	public ReadOnlySpan<(Vector2, Vector2, Vector2)> GetHiddenAreaMesh ( EVREye eye, bool inverse = false ) {
+		var mesh = VR.CVR.GetHiddenAreaMesh( eye, inverse ? EHiddenAreaMeshType.k_eHiddenAreaMesh_Inverse : EHiddenAreaMeshType.k_eHiddenAreaMesh_Standard );
+		
+		unsafe {
+			return new ReadOnlySpan<(Vector2, Vector2, Vector2)>( mesh.pVertexData.ToPointer(), (int)mesh.unTriangleCount );
 		}
 	}
 
-	public void GetInverseHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle ) {
-		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_Inverse );
-		var size = Marshal.SizeOf<HmdVector2_t>();
-		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
-			var ptr = mesh.pVertexData + size * i * 3;
-			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
-			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + size );
-			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + size + size );
-			addTriangle( new( a.v0, a.v1 ), new( b.v0, b.v1 ), new( c.v0, c.v1 ) );
-		}
-	}
-
-	public void GetLoopHiddenAreaMesh ( EVREye eye, Action<Vector2> addVertex ) {
+	public ReadOnlySpan<Vector2> GetLoopHiddenAreaMesh ( EVREye eye ) {
 		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_LineLoop );
-		var size = Marshal.SizeOf<HmdVector2_t>();
-		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
-			var ptr = mesh.pVertexData + size * i;
-			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
-			addVertex( new( a.v0, a.v1 ) );
+
+		unsafe {
+			return new ReadOnlySpan<Vector2>( mesh.pVertexData.ToPointer(), (int)mesh.unTriangleCount );
 		}
 	}
 
