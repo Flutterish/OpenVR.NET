@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>OpenVR.NET</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>0.8.0</Version>
+    <Version>0.8.1</Version>
     <Authors>PeriTheGee</Authors>
     <Description>A thin object-oriented wrapper around openvr</Description>
     <Copyright>MIT</Copyright>
