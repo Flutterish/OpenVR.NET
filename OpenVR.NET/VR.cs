@@ -155,7 +155,6 @@ public class VR {
 	bool hasFocus = true;
 	public ETrackingUniverseOrigin TrackingOrigin { get; private set; } = (ETrackingUniverseOrigin)( -1 );
 	TrackedDevicePose_t[] renderPoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
-	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 	Dictionary<int, (VrDevice device, VrDevice.Owner owner)> trackedDeviceOwners = new();
 	HashSet<VrDevice> activeDevices = new();
 	// although in theory this should be on the update thread,
@@ -166,7 +165,7 @@ public class VR {
 			Valve.VR.OpenVR.Compositor.SetTrackingSpace( origin );
 		}
 
-		var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( renderPoses, gamePoses );
+		var error = Valve.VR.OpenVR.Compositor.WaitGetPoses( renderPoses, Array.Empty<TrackedDevicePose_t>() );
 		if ( error is EVRCompositorError.DoNotHaveFocus ) {
 			if ( hasFocus ) {
 				hasFocus = false;
@@ -220,11 +219,9 @@ public class VR {
 			if ( pose.bDeviceIsConnected ) {
 				if ( !activeDevices.Contains( device ) ) {
 					activeDevices.Add( device );
-					if ( device is Controller controller ) {
-						inputScheduler.Enqueue( () => {
-							updateableInputDevices.Add( controller );
-						} );
-					}
+					inputScheduler.Enqueue( () => {
+						updateableInputDevices.Add( (device, owner) );
+					} );
 					updateScheduler.Enqueue( () => {
 						owner.IsEnabled = true;
 					} );
@@ -233,12 +230,12 @@ public class VR {
 			else {
 				if ( activeDevices.Contains( device ) ) {
 					activeDevices.Remove( device );
-					if ( device is Controller controller ) {
-						inputScheduler.Enqueue( () => {
-							updateableInputDevices.Remove( controller );
+					inputScheduler.Enqueue( () => {
+						updateableInputDevices.Remove( (device, owner) );
+						if ( device is Controller controller ) {
 							controller.OnTurnedOff();
-						} );
-					}
+						}
+					} );
 					updateScheduler.Enqueue( () => {
 						owner.IsEnabled = false;
 					} );
@@ -248,11 +245,6 @@ public class VR {
 			if ( pose.bPoseIsValid ) {
 				owner.RenderPosition = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
 				owner.RenderRotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
-				pose = ref gamePoses[i];
-				owner.Position = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
-				owner.Rotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
-				owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
-				owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, -pose.vAngularVelocity.v2 );
 			}
 
 			if ( pose.eTrackingResult != owner.offThreadTrackingState ) {
@@ -267,18 +259,32 @@ public class VR {
 	#endregion
 	#region Input Thread
 	ConcurrentQueue<Action> inputScheduler = new();
-	HashSet<Controller> updateableInputDevices = new();
+	HashSet<(VrDevice device, VrDevice.Owner owner)> updateableInputDevices = new();
+	TrackedDevicePose_t[] gamePoses = new TrackedDevicePose_t[Valve.VR.OpenVR.k_unMaxTrackedDeviceCount];
 
 	/// <summary>
 	/// Updates inputs. Should be called on the input or update thread.
+	/// You can supply a time in seconds for openvr to predict input poses
 	/// </summary>
-	public void UpdateInput () {
+	public void UpdateInput ( float posePredictionTime = 0 ) {
 		while ( inputScheduler.TryDequeue( out var action ) ) {
 			action();
 		}
 
 		if ( !State.HasFlag( VrState.OK ) )
 			return;
+
+		CVR.GetDeviceToAbsoluteTrackingPose( TrackingOrigin, posePredictionTime, gamePoses );
+		foreach ( var (device, owner) in updateableInputDevices ) {
+			ref var pose = ref gamePoses[device.DeviceIndex];
+			if ( !pose.bPoseIsValid )
+				continue;
+
+			owner.Position = ExtractPosition( ref pose.mDeviceToAbsoluteTracking );
+			owner.Rotation = ExtractRotation( ref pose.mDeviceToAbsoluteTracking );
+			owner.Velocity = new( pose.vVelocity.v0, pose.vVelocity.v1, pose.vVelocity.v2 );
+			owner.AngularVelocity = new( pose.vAngularVelocity.v0, pose.vAngularVelocity.v1, -pose.vAngularVelocity.v2 );
+		}
 
 		if ( actionSets != null ) {
 			var error = Valve.VR.OpenVR.Input.UpdateActionState( actionSets, (uint)Marshal.SizeOf<VRActiveActionSet_t>() );
@@ -293,7 +299,8 @@ public class VR {
 		}
 
 		foreach ( var i in updateableInputDevices ) {
-			i.UpdateInput();
+			if ( i.device is Controller controller )
+				controller.UpdateInput();
 		}
 	}
 	#endregion

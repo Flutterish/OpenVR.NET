@@ -21,8 +21,10 @@ public class VrModel {
 	}
 
 	public void Update () {
-		ParentTransform.Position = new( Device.Position.X, Device.Position.Y, Device.Position.Z );
-		ParentTransform.Rotation = new( Device.Rotation.X, Device.Rotation.Y, Device.Rotation.Z, Device.Rotation.W );
+		var pos = Device.RenderPosition;
+		var rot = Device.RenderRotation;
+		ParentTransform.Position = new( pos.X, pos.Y, pos.Z );
+		ParentTransform.Rotation = new( rot.X, rot.Y, rot.Z, rot.W );
 
 		var maybeState = (Device as Controller)?.GetComponentState( Component );
 		if ( maybeState is not Controller.ComponentState state )
