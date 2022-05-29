@@ -6,6 +6,13 @@
     <Nullable>enable</Nullable>
     <RootNamespace>OpenVR.NET</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.8.0</Version>
+    <Authors>PeriTheGee</Authors>
+    <Description>A thin object-oriented wrapper around openvr</Description>
+    <Copyright>MIT</Copyright>
+    <PackageProjectUrl>https://github.com/Flutterish/OpenVR.NET</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Flutterish/OpenVR.NET</RepositoryUrl>
+    <PackageTags>openvr;vr;openxr;xr</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
