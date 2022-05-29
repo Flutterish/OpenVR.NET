@@ -107,6 +107,10 @@ internal class TestWindow : GameWindow {
 		}
 	}
 
+	Mesh<Vector3>? leftHiddenMesh;
+	Mesh<Vector3>? rightHiddenMesh;
+	Mesh<Vector3>? hiddenMesh;
+
 	Shader basicShader;
 	Shader colorShader;
 	Shader textureShader;
@@ -222,23 +226,30 @@ internal class TestWindow : GameWindow {
 			if ( VR.Headset is not Headset headset )
 				return;
 
+			if ( leftHiddenMesh is null ) {
+				loadHiddenMeshes( ctx );
+			}
+
 			headTransform.Position = new( headset.RenderPosition.X, headset.RenderPosition.Y, headset.RenderPosition.Z );
 			headTransform.Rotation = new( headset.RenderRotation.X, headset.RenderRotation.Y, headset.RenderRotation.Z, headset.RenderRotation.W );
 
 			var lm = convert( ctx.GetEyeToHeadMatrix( EVREye.Eye_Left ) ).Inverted();
 			var lp = convert( ctx.GetProjectionMatrix( EVREye.Eye_Left, 0.01f, 1000 ) );
 			projectionMatrix = headTransform.MatrixInverse * lm * Matrix4.CreateScale( 1, 1, -1 ) * lp;
+			hiddenMesh = leftHiddenMesh;
 			drawScene( left, (int)ctx.Resolution.X, (int)ctx.Resolution.Y );
 			ctx.SubmitFrame( EVREye.Eye_Left, new() { eType = ETextureType.OpenGL, handle = (IntPtr)left.Texture.Handle } );
 
 			var rm = convert( ctx.GetEyeToHeadMatrix( EVREye.Eye_Right ) ).Inverted();
 			var rp = convert( ctx.GetProjectionMatrix( EVREye.Eye_Right, 0.01f, 1000 ) );
 			projectionMatrix = headTransform.MatrixInverse * rm * Matrix4.CreateScale( 1, 1, -1 ) * rp;
+			hiddenMesh = rightHiddenMesh;
 			drawScene( right, (int)ctx.Resolution.X, (int)ctx.Resolution.Y );
 			ctx.SubmitFrame( EVREye.Eye_Right, new() { eType = ETextureType.OpenGL, handle = (IntPtr)right.Texture.Handle } );
 		}
 
 		if ( displayed is DisplayedBuffer.Screen ) {
+			hiddenMesh = null;
 			drawHeadset = true;
 			projectionMatrix = cameraTransform.MatrixInverse * Matrix4.CreateScale( 1, 1, -1 ) * Matrix4.CreatePerspectiveFieldOfView(
 				MathF.PI / 2,
@@ -263,6 +274,34 @@ internal class TestWindow : GameWindow {
 		SwapBuffers();
 	}
 
+	void loadHiddenMeshes ( IVRDrawContext ctx ) {
+		leftHiddenMesh = new( v => PositionVertex.Upload( v, v.Length ) );
+		leftHiddenMesh.Link( basicShader, s => PositionVertex.Link( position: s.GetAttrib( "aPos" ) ) );
+		uint i = 0;
+		ctx.GetHiddenAreaMesh( EVREye.Eye_Left, ( a, b, c ) => {
+			leftHiddenMesh.Vertices.Add( new( (a.X - 0.5f) * 2, (a.Y - 0.5f) * 2, 0 ) );
+			leftHiddenMesh.Vertices.Add( new( (b.X - 0.5f) * 2, (b.Y - 0.5f) * 2, 0 ) );
+			leftHiddenMesh.Vertices.Add( new( (c.X - 0.5f) * 2, (c.Y - 0.5f) * 2, 0 ) );
+			leftHiddenMesh.Indices.Add( i++ );
+			leftHiddenMesh.Indices.Add( i++ );
+			leftHiddenMesh.Indices.Add( i++ );
+		} );
+		leftHiddenMesh.Upload();
+
+		rightHiddenMesh = new( v => PositionVertex.Upload( v, v.Length ) );
+		rightHiddenMesh.Link( basicShader, s => PositionVertex.Link( position: s.GetAttrib( "aPos" ) ) );
+		i = 0;
+		ctx.GetHiddenAreaMesh( EVREye.Eye_Right, ( a, b, c ) => {
+			rightHiddenMesh.Vertices.Add( new( (a.X - 0.5f) * 2, (a.Y - 0.5f) * 2, 0 ) );
+			rightHiddenMesh.Vertices.Add( new( (b.X - 0.5f) * 2, (b.Y - 0.5f) * 2, 0 ) );
+			rightHiddenMesh.Vertices.Add( new( (c.X - 0.5f) * 2, (c.Y - 0.5f) * 2, 0 ) );
+			rightHiddenMesh.Indices.Add( i++ );
+			rightHiddenMesh.Indices.Add( i++ );
+			rightHiddenMesh.Indices.Add( i++ );
+		} );
+		rightHiddenMesh.Upload();
+	}
+
 	void drawScene ( Framebuffer framebuffer, int width, int height ) {
 		framebuffer.Resize( width, height );
 		framebuffer.Bind();
@@ -277,6 +316,13 @@ internal class TestWindow : GameWindow {
 		GL.ClearColor( 0.2f, 0.3f, 0.3f, 1.0f );
 		GL.Enable( EnableCap.DepthTest );
 		GL.Clear( ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit );
+
+		if ( hiddenMesh != null ) {
+			basicShader.Bind();
+			hiddenMesh.Bind();
+			GL.DrawElements( PrimitiveType.Triangles, hiddenMesh.Indices.Count, DrawElementsType.UnsignedInt, IntPtr.Zero );
+		}
+
 		unlitShader.Bind();
 		susie.Bind();
 		unlitShader.SetUniform( "tint", new Color4( 1f, 1, 1, 1 ) );

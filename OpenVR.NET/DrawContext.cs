@@ -24,7 +24,8 @@ public interface IVRDrawContext {
 	void SubmitFrame ( EVREye eye, Texture_t texture, EVRSubmitFlags flags = EVRSubmitFlags.Submit_Default );
 
 	/// <summary>
-	/// Gets a mesh which will cover the area of the render texture that is not visible
+	/// Gets a mesh which will cover the area of the render texture that is not visible.
+	/// The mesh is in UV coordinates.
 	/// </summary>
 	void GetHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle );
 
@@ -61,11 +62,12 @@ class DrawContext : IVRDrawContext {
 
 	public void GetHiddenAreaMesh ( EVREye eye, Action<Vector2, Vector2, Vector2> addTriangle ) {
 		var mesh = VR.CVR.GetHiddenAreaMesh( eye, EHiddenAreaMeshType.k_eHiddenAreaMesh_Standard );
+		var size = Marshal.SizeOf<HmdVector2_t>();
 		for ( int i = 0; i < mesh.unTriangleCount; i++ ) {
-			var ptr = mesh.pVertexData + i * 3;
+			var ptr = mesh.pVertexData + size * i * 3;
 			var a = Marshal.PtrToStructure<HmdVector2_t>( ptr );
-			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + 1 );
-			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + 2 );
+			var b = Marshal.PtrToStructure<HmdVector2_t>( ptr + size );
+			var c = Marshal.PtrToStructure<HmdVector2_t>( ptr + size + size );
 			addTriangle( new( a.v0, a.v1 ), new( b.v0, b.v1 ), new( c.v0, c.v1 ) );
 		}
 	}
