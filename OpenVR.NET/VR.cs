@@ -401,29 +401,38 @@ public class VR {
 			throw new Exception( $"Could not set action manifest: {error}" );
 		}
 
-		var actionSets = manifest.ActionSets.Select( set => {
-			ulong handle = 0;
-			var error = Valve.VR.OpenVR.Input.GetActionSetHandle( set.Path, ref handle );
-			if ( error != EVRInputError.None ) {
-				Events.Log( $"Could not get handle for action set {set.Name}", EventType.CoundntFetchActionSetHandle, error );
-			}
-
-			return new VRActiveActionSet_t { ulActionSet = handle };
-		} ).ToArray();
-
-		foreach ( var set in manifest.ActionSets ) {
-			foreach ( var action in manifest.ActionsForSet( set ) ) {
-				definedActions.Add( action.Name, action );
-			}
-		}
-
-		ETrackedControllerRole hand = ETrackedControllerRole.Invalid;
-		error = Valve.VR.OpenVR.Input.GetDominantHand( ref hand );
-		if ( error is EVRInputError.None )
-			DominantHand = hand;
-
-		actionManifest = manifest;
 		inputScheduler.Enqueue( () => {
+			actionManifest = null;
+			definedActions.Clear();
+			actions.Clear();
+			foreach ( var (i, _) in updateableInputDevices ) {
+				if ( i is Controller controller )
+					controller.actions.Clear();
+			}
+
+
+			var actionSets = manifest.ActionSets.Select( set => {
+				ulong handle = 0;
+				var error = Valve.VR.OpenVR.Input.GetActionSetHandle( set.Path, ref handle );
+				if ( error != EVRInputError.None ) {
+					Events.Log( $"Could not get handle for action set {set.Name}", EventType.CoundntFetchActionSetHandle, error );
+				}
+
+				return new VRActiveActionSet_t { ulActionSet = handle };
+			} ).ToArray();
+
+			foreach ( var set in manifest.ActionSets ) {
+				foreach ( var action in manifest.ActionsForSet( set ) ) {
+					definedActions.Add( action.Name, action );
+				}
+			}
+
+			ETrackedControllerRole hand = ETrackedControllerRole.Invalid;
+			error = Valve.VR.OpenVR.Input.GetDominantHand( ref hand );
+			if ( error is EVRInputError.None )
+				DominantHand = hand;
+
+			actionManifest = manifest;
 			this.actionSets = actionSets;
 			actionsLoaded?.Invoke();
 			actionsLoaded = null;

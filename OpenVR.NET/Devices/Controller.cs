@@ -153,7 +153,7 @@ public class Controller : VrDevice {
 		}
 	}
 
-	Dictionary<Enum, Input.Action> actions = new();
+	internal Dictionary<Enum, Input.Action> actions = new();
 	/// <inheritdoc cref="VR.GetAction{T}(Enum, Controller?)"/>
 	public T? GetAction<T> ( Enum action ) where T : Input.Action {
 		if ( !actions.TryGetValue( action, out var value ) ) {
