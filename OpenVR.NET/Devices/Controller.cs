@@ -158,7 +158,7 @@ public class Controller : VrDevice {
 	public T? GetAction<T> ( Enum action ) where T : Input.Action {
 		if ( !actions.TryGetValue( action, out var value ) ) {
 			var @params = VR.ActionFor( action );
-			actions.Add( action, @params.CreateAction( VR, this ) );
+			actions.Add( action, value = @params.CreateAction( VR, this ) );
 		}
 
 		return value as T;
