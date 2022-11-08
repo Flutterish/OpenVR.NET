@@ -7,6 +7,9 @@ using static OpenVR.NET.Extensions;
 namespace OpenVR.NET.Devices;
 
 public class Controller : VrDevice {
+	protected Controller ( VR vr, int index, ETrackedControllerRole role ) : base( vr, index ) {
+		Role = role;
+	}
 	public Controller ( VR vr, int index, out Owner owner ) : base( vr, index, out owner ) {
 		var error = ETrackedPropertyError.TrackedProp_Success;
 		var roleID = Valve.VR.OpenVR.System.GetInt32TrackedDeviceProperty( (uint)index, ETrackedDeviceProperty.Prop_ControllerRoleHint_Int32, ref error );
